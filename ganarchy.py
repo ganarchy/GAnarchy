@@ -167,7 +167,7 @@ def cron_target():
     def handle_target(url, project_commit):
         branchname = hashlib.sha256(url.encode("utf-8")).hexdigest()
         try:
-            pre_hash = subprocess.check_output(["git", "-C", cache_home, "show", branchname, "-s", "--format=%H", "--"], stderr=subprocess.DEVNULL)
+            pre_hash = subprocess.check_output(["git", "-C", cache_home, "show", branchname, "-s", "--format=%H", "--"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
         except subprocess.CalledProcessError:
             pre_hash = None
         try:
@@ -176,16 +176,16 @@ def cron_target():
             # This may error for various reasons, but some are important: dead links, etc
             click.echo(e.output, err=True)
             return None
-        post_hash = subprocess.check_output(["git", "-C", cache_home, "show", branchname, "-s", "--format=%H", "--"], stderr=subprocess.DEVNULL)
+        post_hash = subprocess.check_output(["git", "-C", cache_home, "show", branchname, "-s", "--format=%H", "--"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
         if not pre_hash:
             pre_hash = post_hash
         try:
-            count = subprocess.check_output(["git", "-C", cache_home, "rev-list", "--count", pre_hash + ".." + post_hash])
+            count = int(subprocess.check_output(["git", "-C", cache_home, "rev-list", "--count", pre_hash + ".." + post_hash, "--"]).decode("utf-8").strip())
         except subprocess.CalledProcessError:
             count = 0  # force-pushed
         try:
             subprocess.check_call(["git", "-C", cache_home, "merge-base", "--is-ancestor", project_commit, branchname], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return count, post_hash, subprocess.check_output(["git", "-C", cache_home, "show", branchname, "-s", "--format=%B", "--"], stderr=subprocess.DEVNULL)
+            return count, post_hash, subprocess.check_output(["git", "-C", cache_home, "show", branchname, "-s", "--format=%B", "--"], stderr=subprocess.DEVNULL).decode("utf-8", "replace")
         except subprocess.CalledProcessError:
             return None
     os.makedirs(cache_home, exist_ok=True)
