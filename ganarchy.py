@@ -201,11 +201,12 @@ def cron_target():
         if result is not None:
             count, post_hash, msg = result
             entries.append((url, count, post_hash))
-            generate_html.append((url, msg))
+            generate_html.append((url, msg, count))
     c.executemany('''INSERT INTO repo_history VALUES (NULL, ?, ?, ?)''', entries)
     conn.commit()
+    generate_html.sort(key=lambda x: x[2])  # sort by count
     html_entries = []
-    for (url, msg) in generate_html:
+    for (url, msg, count) in generate_html:
         history = c.execute('''SELECT count FROM repo_history WHERE url == ? ORDER BY entry ASC''', (url,)).fetchall()
         # TODO process history into SVG
         html_entries.append((url, msg, ""))
