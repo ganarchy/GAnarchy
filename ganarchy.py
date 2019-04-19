@@ -203,9 +203,11 @@ def cron_target():
             count, post_hash, msg = result
             entries.append((url, count, post_hash))
             generate_html.append((url, msg, count))
+    # sort stuff twice because reasons
+    entries.sort(key=lambda x: x[1], reverse=True)
+    generate_html.sort(key=lambda x: x[2], reverse=True)
     c.executemany('''INSERT INTO repo_history VALUES (NULL, ?, ?, ?)''', entries)
     conn.commit()
-    generate_html.sort(key=lambda x: x[2])  # sort by count
     html_entries = []
     for (url, msg, count) in generate_html:
         history = c.execute('''SELECT count FROM repo_history WHERE url == ? ORDER BY entry ASC''', (url,)).fetchall()
