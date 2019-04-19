@@ -85,6 +85,7 @@ def initdb():
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
     c.execute('''CREATE TABLE repos (url TEXT PRIMARY KEY, active INT)''')
+    c.execute('''CREATE INDEX active_key ON repos (active)''')
     c.execute('''CREATE TABLE repo_history (entry INTEGER PRIMARY KEY ASC AUTOINCREMENT, url TEXT, count INTEGER, head_commit TEXT)''')
     c.execute('''CREATE TABLE config (git_commit TEXT, project_title TEXT)''')
     c.execute('''INSERT INTO config VALUES ('', '')''')
