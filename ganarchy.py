@@ -49,6 +49,9 @@ TEMPLATE = """<!DOCTYPE html>
         {% if project_desc %}<meta name="description" content="{{ project_desc|e }}" />{% endif %}
     </head>
     <body>
+        <h1>{{ project_title|e }}</h1>
+        <p>Tracking <span id="project_commit">{{ project_commit }}</span></p>
+        <div id="project_body"><p>{{ project_body|e|replace("\n\n", "</p><p>") }}</p></div>
         <ul>
         {% for url, msg, img in repos -%}
             <li><a href="{{ url|e }}">{{ url|e }}</a>: {{ msg|e }}</li>
@@ -217,7 +220,11 @@ def cron_target():
         project_title, project_desc = ("Error parsing project commit",)*2
     if project_desc:
         project_desc = project_desc.strip()
-    click.echo(template.render(project_title = project_title, project_desc = project_desc, repos = html_entries))
+    click.echo(template.render(project_title  = project_title,
+                               project_desc   = project_desc,
+                               project_body   = project,
+                               project_commit = project_commit,
+                               repos          = html_entries))
 
 if __name__ == "__main__":
     ganarchy()
