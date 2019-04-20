@@ -26,35 +26,36 @@ import jinja2
 # default HTML, can be overridden in $XDG_DATA_HOME/ganarchy/template.html or the $XDG_DATA_DIRS (TODO)
 TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<!--
-GAnarchy - project homepage generator
-Copyright (C) 2019  Soni L.
+    <head>
+        <meta charset="utf-8" />
+        <!--
+        GAnarchy - project homepage generator
+        Copyright (C) 2019  Soni L.
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+        This program is free software: you can redistribute it and/or modify
+        it under the terms of the GNU Affero General Public License as published by
+        the Free Software Foundation, either version 3 of the License, or
+        (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
+        This program is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+        GNU Affero General Public License for more details.
 
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
--->
-<title>{{ project_title }}</title>
-</head>
-<body>
-<ul>
-{% for url, msg, img in repos %}
-    <li><a href="{{ url|e }}">{{ url|e }}</a>: {{ msg|e }}</li>
-{% endfor %}
-</ul>
-Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.
-</body>
+        You should have received a copy of the GNU Affero General Public License
+        along with this program.  If not, see <https://www.gnu.org/licenses/>.
+        -->
+        <title>{{ project_title|e }}</title>
+        {% if project_desc %}<meta name="description" content="{{ project_desc|e }}" />{% endif %}
+    </head>
+    <body>
+        <ul>
+        {% for url, msg, img in repos -%}
+            <li><a href="{{ url|e }}">{{ url|e }}</a>: {{ msg|e }}</li>
+        {%- endfor %}
+        </ul>
+        Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.
+    </body>
 </html>
 """
 
@@ -88,8 +89,8 @@ def initdb():
     c.execute('''CREATE INDEX active_key ON repos (active)''')
     c.execute('''CREATE TABLE repo_history (entry INTEGER PRIMARY KEY ASC AUTOINCREMENT, url TEXT, count INTEGER, head_commit TEXT)''')
     c.execute('''CREATE INDEX url_key ON repo_history (url)''')
-    c.execute('''CREATE TABLE config (git_commit TEXT, project_title TEXT)''')
-    c.execute('''INSERT INTO config VALUES ('', '')''')
+    c.execute('''CREATE TABLE config (git_commit TEXT)''')
+    c.execute('''INSERT INTO config VALUES ('')''')
     conn.commit()
     conn.close()
 
@@ -103,17 +104,6 @@ def set_commit(commit):
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
     c.execute('''UPDATE config SET git_commit=?''', (commit,))
-    conn.commit()
-    conn.close()
-
-@ganarchy.command()
-@click.argument('project-title')
-def set_project_title(project_title):
-    """Sets the project title"""
-    import re
-    conn = sqlite3.connect(data_home + "/ganarchy.db")
-    c = conn.cursor()
-    c.execute('''UPDATE config SET project_title=?''', (project_title,))
     conn.commit()
     conn.close()
 
@@ -194,8 +184,8 @@ def cron_target():
     subprocess.call(["git", "-C", cache_home, "init", "-q"])
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
-    c.execute('''SELECT git_commit, project_title FROM config''')
-    (project_commit, project_title) = c.fetchone()
+    c.execute('''SELECT git_commit FROM config''')
+    (project_commit,) = c.fetchone()
     entries = []
     generate_html = []
     for (e, url,) in c.execute("""SELECT max(e), url FROM (SELECT max(T1.entry) e, T1.url FROM repo_history T1
@@ -220,7 +210,14 @@ def cron_target():
         # TODO process history into SVG
         html_entries.append((url, msg, ""))
     template = jinja2.Template(TEMPLATE)
-    click.echo(template.render(project_title = project_title, repos = html_entries))
+    import re
+    project = subprocess.check_output(["git", "-C", cache_home, "show", project_commit, "-s", "--format=%B", "--"], stderr=subprocess.DEVNULL).decode("utf-8", "replace")
+    project_title, project_desc = (lambda x: x.groups() if x is not None else ('', None))(re.fullmatch('^\\[Project\\]\s+(.+?)(?:\n\n(.+))?$', project, flags=re.ASCII|re.DOTALL|re.IGNORECASE))
+    if not project_title.strip():
+        project_title, project_desc = ("Error parsing project commit",)*2
+    if project_desc:
+        project_desc = project_desc.strip()
+    click.echo(template.render(project_title = project_title, project_desc = project_desc, repos = html_entries))
 
 if __name__ == "__main__":
     ganarchy()

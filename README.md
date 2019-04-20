@@ -11,11 +11,8 @@ First, initialize the database with `ganarchy.py initdb`. The database is stored
 
 Then, set the project commit with `ganarchy.py set-commit COMMIT`, where `COMMIT` is the full commit hash.
 The commit *must* start with `[Project]` followed by the project name, and may have an optional description.
-(Note: This requirement isn't currently checked, but will be in the future. This is important for a future federation
+(Note: This requirement isn't properly checked, but will be in the future. This is important for a future federation
 protocol that allows for automatically discovering forks based on the project commit.)
-
-Currently, you also need to set the project title manually using `ganarchy.py set-project-title PROJECT-TITLE`. This will
-be replaced with the above mechanism in the future.
 
 Once everything is initialized, add some repos with `ganarchy.py repo add URL`, and enable them with `ganarchy.py repo enable URL`
 (they come disabled by default). You are now ready to go.
