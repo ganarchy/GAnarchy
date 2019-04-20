@@ -167,7 +167,7 @@ def remove(url):
 def cron_target():
     """Runs ganarchy as a cron target"""
     def handle_target(url, project_commit):
-        branchname = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        branchname = "gan" + hashlib.sha256(url.encode("utf-8")).hexdigest()
         try:
             pre_hash = subprocess.check_output(["git", "-C", cache_home, "show", branchname, "-s", "--format=%H", "--"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
         except subprocess.CalledProcessError:
