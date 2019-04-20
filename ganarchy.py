@@ -198,7 +198,12 @@ def cron_target():
     (project_commit, project_title) = c.fetchone()
     entries = []
     generate_html = []
-    for (url,) in c.execute("""SELECT url FROM repos WHERE active == 1"""):
+    for (e, url,) in c.execute("""SELECT max(e), url FROM (SELECT max(T1.entry) e, T1.url FROM repo_history T1
+                                                        WHERE (SELECT active FROM repos T2 WHERE url = T1.url)
+                                                        GROUP BY T1.url
+                                                        UNION
+                                                        SELECT null, T3.url FROM repos T3 WHERE active)
+                               GROUP BY url ORDER BY e"""):
         result = handle_target(url, project_commit)
         if result is not None:
             count, post_hash, msg = result
