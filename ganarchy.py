@@ -50,14 +50,19 @@ TEMPLATE = """<!DOCTYPE html>
     </head>
     <body>
         <h1>{{ project_title|e }}</h1>
-        <p>Tracking <span id="project_commit">{{ project_commit }}</span></p>
+        <p>Tracking <span id="project_commit"><a href="web+ganarchy://{{ project_commit }}">{{ project_commit }}</a></span></p>
         <div id="project_body"><p>{{ project_body|e|replace("\n\n", "</p><p>") }}</p></div>
         <ul>
         {% for url, msg, img in repos -%}
             <li><a href="{{ url|e }}">{{ url|e }}</a>: {{ msg|e }}</li>
         {%- endfor %}
         </ul>
-        Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.
+        <p>Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.</p>
+        <p>
+            <a href="/">Main page</a>.
+            <!-- commented out because browsers suck :( -->
+            <!--<a href="{{ base_url|e }}" onclick="event.preventDefault(); navigator.registerProtocolHandler('web+ganarchy', this.href + 'project/%s', 'GAnarchy');">Register web+ganarchy:// handler</a>.-->
+        </p>
     </body>
 </html>
 """
@@ -92,8 +97,8 @@ def initdb():
     c.execute('''CREATE INDEX active_key ON repos (active)''')
     c.execute('''CREATE TABLE repo_history (entry INTEGER PRIMARY KEY ASC AUTOINCREMENT, url TEXT, count INTEGER, head_commit TEXT)''')
     c.execute('''CREATE INDEX url_key ON repo_history (url)''')
-    c.execute('''CREATE TABLE config (git_commit TEXT)''')
-    c.execute('''INSERT INTO config VALUES ('')''')
+    c.execute('''CREATE TABLE config (git_commit TEXT, base_url TEXT)''')
+    c.execute('''INSERT INTO config VALUES ('', '')''')
     conn.commit()
     conn.close()
 
@@ -107,6 +112,16 @@ def set_commit(commit):
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
     c.execute('''UPDATE config SET git_commit=?''', (commit,))
+    conn.commit()
+    conn.close()
+
+@ganarchy.command()
+@click.argument('base-url')
+def set_base_url(base_url):
+    """Sets the GAnarchy instance's base URL"""
+    conn = sqlite3.connect(data_home + "/ganarchy.db")
+    c = conn.cursor()
+    c.execute('''UPDATE config SET base_url=?''', (base_url,))
     conn.commit()
     conn.close()
 
@@ -187,8 +202,11 @@ def cron_target():
     subprocess.call(["git", "-C", cache_home, "init", "-q"])
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
-    c.execute('''SELECT git_commit FROM config''')
-    (project_commit,) = c.fetchone()
+    c.execute('''SELECT git_commit, base_url FROM config''')
+    (project_commit, base_url) = c.fetchone()
+    if not base_url or not project_commit:
+        click.echo("No base URL or project commit specified", err=True)
+        return
     entries = []
     generate_html = []
     for (e, url,) in c.execute("""SELECT max(e), url FROM (SELECT max(T1.entry) e, T1.url FROM repo_history T1
@@ -224,7 +242,8 @@ def cron_target():
                                project_desc   = project_desc,
                                project_body   = project,
                                project_commit = project_commit,
-                               repos          = html_entries))
+                               repos          = html_entries,
+                               base_url       = base_url))
 
 if __name__ == "__main__":
     ganarchy()
