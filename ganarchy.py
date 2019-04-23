@@ -50,7 +50,7 @@ TEMPLATE = """<!DOCTYPE html>
     </head>
     <body>
         <h1>{{ project_title|e }}</h1>
-        <p>Tracking <span id="project_commit"><a href="web+ganarchy://{{ project_commit }}">{{ project_commit }}</a></span></p>
+        <p>Tracking <span id="project_commit"><a href="web+ganarchy:{{ project_commit }}">{{ project_commit }}</a></span></p>
         <div id="project_body"><p>{{ project_body|e|replace("\n\n", "</p><p>") }}</p></div>
         <ul>
         {% for url, msg, img in repos -%}
@@ -61,7 +61,7 @@ TEMPLATE = """<!DOCTYPE html>
         <p>
             <a href="/">Main page</a>.
             <!-- commented out because browsers suck :( -->
-            <!--<a href="{{ base_url|e }}" onclick="event.preventDefault(); navigator.registerProtocolHandler('web+ganarchy', this.href + 'project/%s', 'GAnarchy');">Register web+ganarchy:// handler</a>.-->
+            <!--<a href="{{ base_url|e }}" onclick="event.preventDefault(); navigator.registerProtocolHandler('web+ganarchy', this.href + 'project/%s', 'GAnarchy');">Register web+ganarchy: URI handler</a>.-->
         </p>
     </body>
 </html>
