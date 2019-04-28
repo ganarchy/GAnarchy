@@ -7,6 +7,10 @@ More importantly, it's a tool to help fight against BDFLs and other forms of cen
 Usage
 -----
 
+Note: GAnarchy does not come with a main page. You need to provide one yourself. This should be in your website's `/` path (usually `index.html`).
+The protocol handler uses the path `/?url=%s`. Additionally, your main page needs to include the `index.js` provided by GAnarchy
+for the protocol handler to properly work.
+
 First, initialize the database with `ganarchy.py initdb`. The database is stored in the XDG data home, as per XDG spec.
 
 Then, set the project commit with `ganarchy.py set-commit COMMIT`, where `COMMIT` is the full commit hash.
