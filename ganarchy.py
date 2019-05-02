@@ -88,7 +88,7 @@ def ganarchy():
 
 @ganarchy.command()
 def initdb():
-    """Initializes the ganarchy database"""
+    """Initializes the ganarchy database."""
     os.makedirs(data_home, exist_ok=True)
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
@@ -104,7 +104,7 @@ def initdb():
 @ganarchy.command()
 @click.argument('commit')
 def set_commit(commit):
-    """Sets the commit that represents the project"""
+    """Sets the commit that represents the project."""
     import re
     if not re.fullmatch("[a-fA-F0-9]{40}", commit):
         raise click.BadArgumentUsage("COMMIT must be a git commit hash")
@@ -117,7 +117,7 @@ def set_commit(commit):
 @ganarchy.command()
 @click.argument('base-url')
 def set_base_url(base_url):
-    """Sets the GAnarchy instance's base URL"""
+    """Sets the GAnarchy instance's base URL."""
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
     c.execute('''UPDATE config SET base_url=?''', (base_url,))
@@ -126,12 +126,12 @@ def set_base_url(base_url):
 
 @ganarchy.group()
 def repo():
-    """Modifies repos to track"""
+    """Modifies repos to track."""
 
 @repo.command()
 @click.argument('url')
 def add(url):
-    """Adds a repo to track"""
+    """Adds a repo to track."""
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
     c.execute('''INSERT INTO repos VALUES (?, 0)''', (url,))
@@ -141,7 +141,7 @@ def add(url):
 @repo.command()
 @click.argument('url')
 def enable(url):
-    """Enables tracking of a repo"""
+    """Enables tracking of a repo."""
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
     c.execute('''UPDATE repos SET active=1 WHERE url=?''', (url,))
@@ -151,7 +151,7 @@ def enable(url):
 @repo.command()
 @click.argument('url')
 def disable(url):
-    """Disables tracking of a repo"""
+    """Disables tracking of a repo."""
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
     c.execute('''UPDATE repos SET active=0 WHERE url=?''', (url,))
@@ -161,7 +161,7 @@ def disable(url):
 @repo.command()
 @click.argument('url')
 def remove(url):
-    """Stops tracking a repo"""
+    """Stops tracking a repo."""
     click.confirm("WARNING: This operation does not delete the commits associated with the given repo! Are you sure you want to continue? This operation cannot be undone.")
     conn = sqlite3.connect(data_home + "/ganarchy.db")
     c = conn.cursor()
@@ -170,9 +170,23 @@ def remove(url):
     conn.commit()
     conn.close()
 
+@ganarchy.group()
+def migrations():
+    """Modifies the DB to work with a newer/older version.
+
+    WARNING: THIS COMMAND CAN BE EXTREMELY DESTRUCTIVE!"""
+
+@migrations.command()
+def apply():
+    """ NYI """
+
+@migrations.command()
+def revert():
+    """ NYI """
+
 @ganarchy.command()
 def cron_target():
-    """Runs ganarchy as a cron target"""
+    """Runs ganarchy as a cron target."""
     def handle_target(url, project_commit):
         branchname = "gan" + hashlib.sha256(url.encode("utf-8")).hexdigest()
         try:
