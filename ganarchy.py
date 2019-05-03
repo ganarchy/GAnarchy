@@ -66,6 +66,10 @@ TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
+MIGRATIONS = {
+        "test": ("-- apply", "-- revert", "does nothing")
+        }
+
 try:
     data_home = os.environ['XDG_DATA_HOME']
 except KeyError:
@@ -170,19 +174,46 @@ def remove(url):
     conn.commit()
     conn.close()
 
-@ganarchy.group()
 def migrations():
-    """Modifies the DB to work with a newer/older version.
+    @ganarchy.group()
+    def migrations():
+        """Modifies the DB to work with a newer/older version.
 
-    WARNING: THIS COMMAND CAN BE EXTREMELY DESTRUCTIVE!"""
+        WARNING: THIS COMMAND CAN BE EXTREMELY DESTRUCTIVE!"""
 
-@migrations.command()
-def apply():
-    """ NYI """
+    @migrations.command()
+    @click.argument('migration')
+    def apply(migration):
+        """Applies the migration with the given name."""
+        conn = sqlite3.connect(data_home + "/ganarchy.db")
+        c = conn.cursor()
+        click.echo(MIGRATIONS[migration][0])
+        c.execute(MIGRATIONS[migration][0])
+        conn.commit()
+        conn.close()
 
-@migrations.command()
-def revert():
-    """ NYI """
+    @click.argument('migration')
+    @migrations.command()
+    def revert(migration):
+        """Reverts the migration with the given name."""
+        conn = sqlite3.connect(data_home + "/ganarchy.db")
+        c = conn.cursor()
+        click.echo(MIGRATIONS[migration][1])
+        c.execute(MIGRATIONS[migration][1])
+        conn.commit()
+        conn.close()
+
+    @click.argument('migration', required=False)
+    @migrations.command()
+    def info(migration):
+        """Shows information about the migration with the given name."""
+        if not migration:
+            # TODO could be improved
+            click.echo(MIGRATIONS.keys())
+        else:
+            click.echo(MIGRATIONS[migration][2])
+
+migrations()
 
 @ganarchy.command()
 def cron_target():
