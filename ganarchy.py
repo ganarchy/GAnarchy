@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 # GAnarchy - project homepage generator
 # Copyright (C) 2019  Soni L.
