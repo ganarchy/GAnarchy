@@ -342,8 +342,28 @@ class GitError(LookupError):
     """Raised when a git operation fails, generally due to a missing commit or branch, or network connection issues."""
     pass
 
+class Git:
+    def __init__(self, path):
+        self.path = path
+        self.base = ("git", "-C", path)
+
+    def get_hash(self, target):
+        try:
+            return subprocess.check_output(self.base + ("show", target, "-s", "--format=format:%H", "--"), stderr=subprocess.DEVNULL).decode("utf-8")
+        except subprocess.CalledProcessError as e:
+            raise GitError from e
+
+    def get_commit_message(self, target):
+        try:
+            return subprocess.check_output(self.base + ("show", target, "-s", "--format=format:%B", "--"), stderr=subprocess.DEVNULL).decode("utf-8", "replace")
+        except subprocess.CalledProcessError as e:
+            raise GitError from e
+
+# Currently we only use one git repo, at cache_home
+GIT = Git(cache_home)
+
 class Repo:
-    def __init__(self, dbconn, project, url, branch, list_metadata=False):
+    def __init__(self, dbconn, project, url, branch, head_commit, list_metadata=False):
         self.url = url
         self.branch = branch
         self.project_commit = project.commit
@@ -355,25 +375,28 @@ class Repo:
             self.branchname = "gan" + hmac.new(branch.encode("utf-8"), url.encode("utf-8"), "sha256").hexdigest()
             self.head = "refs/heads/" + branch
 
-        try:
-            self.hash = subprocess.check_output(["git", "-C", cache_home, "show", self.branchname, "-s", "--format=%H", "--"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
-        except subprocess.CalledProcessError:
-            self.hash = None
+        if head_commit:
+            self.hash = head_commit
+        else:
+            try:
+                self.hash = GIT.get_hash(self.branchname)
+            except GitError:
+                self.hash = None
 
         self.message = None
         if list_metadata:
             try:
-                self.fetch_metadata()
+                self.update_metadata()
             except GitError:
                 pass
 
-    def fetch_metadata(self):
-        try:
-            self.message = subprocess.check_output(["git", "-C", cache_home, "show", self.branchname, "-s", "--format=%B", "--"], stderr=subprocess.DEVNULL).decode("utf-8", "replace")
-        except subprocess.CalledProcessError as e:
-            raise GitError from e
+    def update_metadata(self):
+        self.message = GIT.get_commit_message(self.branchname)
 
-    def update(self): # FIXME?
+    def update(self):
+        """
+        Updates the git repo, returning new metadata.
+        """
         try:
             subprocess.check_output(["git", "-C", cache_home, "fetch", "-q", self.url, "+" + self.head + ":" + self.branchname], stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
@@ -381,7 +404,13 @@ class Repo:
             click.echo(e.output, err=True)
             return None
         pre_hash = self.hash
-        post_hash = subprocess.check_output(["git", "-C", cache_home, "show", self.branchname, "-s", "--format=%H", "--"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
+        try:
+            post_hash = GIT.get_hash(self.branchname)
+        except GitError as e:
+            # This should never happen, but maybe there's some edge cases?
+            # Can you force-push an empty branch?
+            # TODO
+            return None
         self.hash = post_hash
         if not pre_hash:
             pre_hash = post_hash
@@ -391,7 +420,7 @@ class Repo:
             count = 0  # force-pushed
         try:
             subprocess.check_call(["git", "-C", cache_home, "merge-base", "--is-ancestor", self.project_commit, self.branchname], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.fetch_metadata()
+            self.update_metadata()
             return count, post_hash, self.message
         except (subprocess.CalledProcessError, GitError) as e:
             click.echo(e, err=True)
@@ -406,29 +435,29 @@ class Project:
         if list_repos:
             repos = []
             with dbconn:
-                for (e, url, branch) in dbconn.execute('''SELECT "max"("e"), "url", "branch" FROM (SELECT "max"("T1"."entry") "e", "T1"."url", "T1"."branch" FROM "repo_history" "T1"
+                for (e, url, branch, head_commit) in dbconn.execute('''SELECT "max"("e"), "url", "branch", "head_commit" FROM (SELECT "max"("T1"."entry") "e", "T1"."url", "T1"."branch", "T1"."head_commit" FROM "repo_history" "T1"
                                                                     WHERE (SELECT "active" FROM "repos" "T2" WHERE "url" = "T1"."url" AND "branch" IS "T1"."branch" AND "project" IS ?1)
                                                                     GROUP BY "T1"."url", "T1"."branch"
                                                                     UNION
-                                                                    SELECT null, "T3"."url", "T3"."branch" FROM "repos" "T3" WHERE "active" AND "project" IS ?1)
+                                                                    SELECT null, "T3"."url", "T3"."branch", null FROM "repos" "T3" WHERE "active" AND "project" IS ?1)
                                            GROUP BY "url" ORDER BY "e"''', (project_commit,)):
-                    repos.append(Repo(dbconn, self, url, branch))
+                    repos.append(Repo(dbconn, self, url, branch, head_commit))
             self.repos = repos
         else:
             self.repos = None
 
     def refresh_metadata(self):
         try:
-            project = subprocess.check_output(["git", "-C", cache_home, "show", self.commit, "-s", "--format=%B", "--"], stderr=subprocess.DEVNULL).decode("utf-8", "replace")
+            project = GIT.get_commit_message(self.commit)
             project_title, project_desc = (lambda x: x.groups() if x is not None else ('', None))(re.fullmatch('^\\[Project\\]\s+(.+?)(?:\n\n(.+))?$', project, flags=re.ASCII|re.DOTALL|re.IGNORECASE))
-            if not project_title.strip():
+            if not project_title.strip(): # FIXME
                 project_title, project_desc = ("Error parsing project commit",)*2
-            if project_desc:
+            if project_desc: # FIXME
                 project_desc = project_desc.strip()
             self.commit_body = project
             self.title = project_title
             self.description = project_desc
-        except subprocess.CalledProcessError:
+        except GitError:
             self.commit_body = None
             self.title = None
             self.description = None
