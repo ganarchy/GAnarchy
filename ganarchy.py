@@ -447,7 +447,8 @@ class Config:
         self.blocked_domain_suffixes = tuple(self.blocked_domain_suffixes) # MUST be tuple
         # TODO re.compile("(^" + "|^".join(map(re.escape, domains)) + "|" + "|".join(map(re.escape, suffixes) + ")$")
         if base:
-            self._update_projects(base.projects, sanitize=False) # already sanitized
+            # FIXME is remove=remove the right thing to do?
+            self._update_projects(base.projects, remove=remove, sanitize=False) # already sanitized
         projects = config_data.get('projects', {})
         self._update_projects(projects, remove=remove)
 
