@@ -547,6 +547,11 @@ def cron_target(project):
         template = env.get_template('index.toml')
         click.echo(template.render(config = conf))
         return
+    if project == "project-list":
+        # could be done with a template but eh w/e, this is probably better
+        for project in conf.projects.keys():
+            click.echo(project)
+        return
     # make sure the cache dir exists
     os.makedirs(cache_home, exist_ok=True)
     # make sure it is a git repo
