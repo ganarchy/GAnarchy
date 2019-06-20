@@ -7,32 +7,31 @@ More importantly, it's a tool to help fight against BDFLs and other forms of cen
 Basic Usage
 -----------
 
-Note: GAnarchy does not come with a main page. You need to provide one yourself. This should be in your website's `/` path (usually `index.html`).
-The protocol handler uses the path `/?url=%s`. Additionally, your main page needs to include the `index.js` provided by GAnarchy
-for the protocol handler to properly work.
-
 First, initialize the database with `ganarchy.py initdb`. The database is stored in the XDG data home, as per XDG spec.
 
-Then, set the project commit with `ganarchy.py set-commit COMMIT`, where `COMMIT` is the full commit hash.
-The commit *must* start with `[Project]` followed by the project name, and may have an optional description.
-(Note: This requirement isn't properly checked, but will be in the future. This is important for a future federation
-protocol that allows for automatically discovering forks based on the project commit.)
+Then create or edit the file `$XDG_CONFIG_HOME/ganarchy/config.toml`. It should contain the following items:
 
-Once everything is initialized, add some repos with `ganarchy.py repo add URL`, and enable or disable them with `ganarchy.py repo enable URL` or
-`ganarchy.py repo disable URL`. They currently come enabled by default. You are now ready to go.
-
-Finally, add `ganarchy.py cron-target > path/to/page.html` to your cron. Optionally `scp page.html scp://server@example.org/page.html`.
-
-Example shell session:
-
-```text
-$ ganarchy.py initdb
-$ ganarchy.py set-commit 385e734a52e13949a7a5c71827f6de920dbfea43
-$ ganarchy.py set-project-name GAnarchy
-$ ganarchy.py repo add https://cybre.tech/SoniEx2/ganarchy
-$ ganarchy.py cron-target > index.html
-$ scp index.html scp://example.org/var/www/html/index.html
 ```
+# Example GAnarchy config
+
+# The base_url is the web address of the GAnarchy instance
+# Restrictions: MUST be present. SHOULD be https.
+base_url = "https://ganarchy.autistic.space/"
+
+# The title is shown on the homepage. If not present, defaults to "GAnarchy on [base_url's hostname]"
+title = "GAnarchy on autistic.space"
+
+# The projects table is made up of "project commit" hashes (see below for project commit)
+[projects.385e734a52e13949a7a5c71827f6de920dbfea43]
+# Each project is made up of repos and branches
+# HEAD is special and refers to the default branch
+# Restrictions: active MUST be present, file URLs are disallowed
+"https://cybre.tech/SoniEx2/ganarchy".HEAD = { active=true }
+# repos/branches with active=false will not be shown or updated
+"https://cybre.tech/SoniEx2/ganarchy".broken = { active=false }
+```
+
+A project commit is a commit that *must* start with `[Project]` followed by the project name, and may have an optional description.
 
 Example project commit:
 
@@ -43,13 +42,19 @@ A Project Page Generator written in Python, focused on giving forks of a
 project the same visibility as the original repo.
 ```
 
+To generate the output pages:
+
+```
+ganarchy.py cron-target index > index.html
+ganarchy.py cron-target config > config.toml # if federation is desired
+ganarchy.py cron-target $PROJECT_COMMIT > project/$PROJECT_COMMIT/index.html # for each project
+```
+
+It's recommended to use a wrapper script to generate the project pages. `ganarchy.py cron-target project-list` may be of use.
+
 Advanced Usage
 --------------
 
-It's also possible to use the same GAnarchy DB with multiple projects. This is currently done by passing `--project COMMIT` to the `repo` commands,
-and using `cron-target COMMIT`.
+In addition to the basic configuration above, you can also place your own templates in `$XDG_CONFIG_HOME/ganarchy/templates`.
 
-Note that the same repo may be part of multiple projects, so it is necessary to specify `--project COMMIT` also when enabling/disabling it.
-
-Additionally, it's possible to set a non-default branch by passing `--branch BRANCHNAME` to the `repo` commands. Given that multiple branches of
-the same repo may be part of the same project, it is also necessary to use `--branch BRANCHNAME` when enabling/disabling them.
+The current templates are: `index.html`, `index.toml`, `project.html`.
