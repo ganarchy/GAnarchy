@@ -510,6 +510,20 @@ class Config:
                     if remove and not active:
                         branch['active'] = False
 
+def debug():
+    @ganarchy.group()
+    def debug():
+        pass
+
+    @debug.command()
+    def paths():
+        click.echo('Config home: {}'.format(config_home))
+        click.echo('Additional config search path: {}'.format(config_dirs))
+        click.echo('Cache home: {}'.format(cache_home))
+        click.echo('Data home: {}'.format(data_home))
+
+debug()
+
 @ganarchy.command()
 @click.option('--skip-errors/--no-skip-errors', default=False)
 @click.argument('files', type=click.File('r', encoding='utf-8'), nargs=-1)
