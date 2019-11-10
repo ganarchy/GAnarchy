@@ -16,15 +16,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import sqlite3
-import click
-import os
-import subprocess
+import abc
+import builtins
 import hashlib
 import hmac
-import jinja2
+import os
 import re
+import sqlite3
+import subprocess
+
+import click
+import jinja2
 import qtoml
+import requests
+
+import abdl
+
 from collections import defaultdict
 from urllib.parse import urlparse
 
@@ -321,17 +328,18 @@ class Repo:
     def update_metadata(self):
         self.message = GIT.get_commit_message(self.branchname)
 
-    def update(self):
+    def update(self, updating=True):
         """
         Updates the git repo, returning new metadata.
         """
-        try:
-            subprocess.check_output(["git", "-C", cache_home, "fetch", "-q", self.url, "+" + self.head + ":" + self.branchname], stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            # This may error for various reasons, but some are important: dead links, etc
-            click.echo(e.output, err=True)
-            self.erroring = True
-            return None
+        if updating:
+            try:
+                subprocess.check_output(["git", "-C", cache_home, "fetch", "-q", self.url, "+" + self.head + ":" + self.branchname], stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as e:
+                # This may error for various reasons, but some are important: dead links, etc
+                click.echo(e.output, err=True)
+                self.erroring = True
+                return None
         pre_hash = self.hash
         try:
             post_hash = GIT.get_hash(self.branchname)
@@ -348,7 +356,8 @@ class Repo:
         except subprocess.CalledProcessError:
             count = 0  # force-pushed
         try:
-            subprocess.check_call(["git", "-C", cache_home, "merge-base", "--is-ancestor", self.project_commit, self.branchname], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if updating:
+                subprocess.check_call(["git", "-C", cache_home, "merge-base", "--is-ancestor", self.project_commit, self.branchname], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.update_metadata()
             return count
         except (subprocess.CalledProcessError, GitError) as e:
@@ -392,9 +401,9 @@ class Project:
             self.title = None
             self.description = None
 
-    def update(self):
+    def update(self, updating=True):
         # TODO? check if working correctly
-        results = [(repo, repo.update()) for repo in self.repos]
+        results = [(repo, repo.update(updating)) for repo in self.repos]
         self.refresh_metadata()
         return results
 
@@ -424,17 +433,87 @@ class GAnarchy:
         if list_projects:
             projects = []
             with dbconn:
-                for (project,) in dbconn.execute('''SELECT DISTINCT "project" FROM "repos" '''): # FIXME? *maybe* sort by activity in the future
+                for (project,) in dbconn.execute('''SELECT DISTINCT "project" FROM "repos" '''):
                     projects.append(Project(dbconn, project, list_repos=list_repos))
             projects.sort(key=lambda project: project.title) # sort projects by title
             self.projects = projects
         else:
             self.projects = None
 
+class ConfigSource(abc.ABC):
+    @abc.abstractmethod
+    def update(self):
+        """Refreshes the config if necessary."""
+        pass
+
+    def is_domain_blocked(self, domain):
+        """Returns True if the given domain is blocked."""
+        return False
+
+    @abc.abstractmethod
+    def get_project_commit_tree_paths(self):
+        """Returns an iterator of (project, URI, branch, options) tuples.
+
+        project is the project commit hash, URI is the repo URI, branch is the branch name and
+        options are the options for the given project commit-tree path."""
+        pass
+
+    @abc.abstractmethod
+    def __getitem__(self, key):
+        raise KeyError
+
+class FileConfigSource(ConfigSource):
+    def __init__(self, filename):
+        self.exists = False
+        self.last_updated = None
+        self.filename = filename
+        self.tomlobj = None
+        self.update()
+
+    def update(self):
+        try:
+            updtime = self.last_updated
+            self.last_updated = os.stat(self.filename).st_mtime
+            if not self.exists or updtime != self.last_updated:
+                with open(self.filename) as f:
+                    self.tomlobj = qtoml.load(f)
+            self.exists = True
+        except OSError:
+            return
+
+    def get_project_commit_tree_paths(self):
+        for (project, pobj) in self.tomlobj['projects'].items():
+            for (uri, uobj) in pobj.items():
+                for (branch, options) in uobj.items():
+                    yield (project, uri, branch, options)
+
+    def __getitem__(self, key):
+        return super().__getitem__(self, key)
+
+class RemoteConfigSource(ConfigSource):
+    def __init__(self, path):
+        self.path = path
+
+    def update(self):
+        raise NotImplementedError
+
+    def get_project_commit_tree_paths(self):
+        for (project, pobj) in self.tomlobj['projects'].items():
+            for (uri, uobj) in pobj.items():
+                for (branch, options) in uobj.items():
+                    yield (project, uri, branch, options)
+
 class Config:
+    # sanitize = skip invalid entries
+    # validate = error on invalid entries
+    CONFIG_PATTERN_SANITIZE = abdl.compile("->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict->url:?$dict->branch:?$dict", dict(vars(builtins), **globals()))
+    # TODO use a validating pattern instead?
+    CONFIG_PATTERN = abdl.compile("->commit->url->branch", dict(vars(builtins), **globals()))
+
     def __init__(self, toml_file, base=None, remove=True):
         self.projects = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
         config_data = qtoml.load(toml_file)
+        self.remote_configs = config_data.get('config_srcs', [])
         self.title = config_data.get('title', '')
         self.base_url = config_data.get('base_url', '')
         # TODO blocked domains (but only read them from config_data if remove is True)
@@ -453,62 +532,36 @@ class Config:
         self._update_projects(projects, remove=remove)
 
     def _update_projects(self, projects, remove, sanitize=True):
-        for (project_commit, repos) in projects.items():
-            if sanitize and not isinstance(repos, dict):
-                # TODO emit warnings?
+        if sanitize:
+            m = Config.CONFIG_PATTERN_SANITIZE.match(projects)
+        else:
+            m = Config.CONFIG_PATTERN.match(projects)
+        for v in m:
+            commit, repo_url, branchname, options = v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1]
+            try:
+                u = urlparse(repo_url)
+                if not u:
+                    raise ValueError
+                getattr(u, 'port') # raises ValueError if port is invalid
+                if u.scheme not in ('http', 'https'):
+                    raise ValueError
+                if (u.hostname in self.blocked_domains) or (u.hostname.endswith(self.blocked_domain_suffixes)):
+                    raise ValueError
+            except ValueError:
                 continue
-            if sanitize and not re.fullmatch("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", project_commit): # future-proofing: sha256 support
-                # TODO emit warnings?
-                continue
-            project = self.projects[project_commit]
-            for (repo_url, branches) in repos.items():
-                if sanitize and not isinstance(branches, dict):
-                    # TODO emit warnings?
-                    continue
-                try:
-                    u = urlparse(repo_url)
-                    if not u:
-                        raise ValueError
-                    getattr(u, 'port') # raises ValueError if port is invalid
-                    if u.scheme in ('file', ''):
-                        raise ValueError
-                    if (u.hostname in self.blocked_domains) or (u.hostname.endswith(self.blocked_domain_suffixes)):
-                        raise ValueError
-                except ValueError:
-                    if sanitize:
-                        # TODO emit warnings?
-                        continue
-                    else:
-                        raise
-                repo = project[repo_url]
-                for (branchname, options) in branches.items():
-                    if sanitize and not isinstance(options, dict):
-                        # TODO emit warnings?
-                        continue
-                    if branchname == "HEAD":
-                        if sanitize:
-                            # feels weird, but generally makes things easier
-                            # DO NOT emit warnings here. this is deliberate.
-                            branchname = None
-                        else:
-                            raise ValueError
-                    branch = repo[branchname]
-                    active = options.get('active', False)
-                    if active not in (True, False):
-                        if sanitize:
-                            # TODO emit warnings?
-                            continue
-                        else:
-                            raise ValueError
-                    ## | remove | branch.active | options.active | result |
-                    ## |    x   |     false     |     false      |  false |
-                    ## |    x   |     false     |     true       |  true  |
-                    ## |    x   |     true      |     true       |  true  |
-                    ## |  false |     true      |     false      |  true  |
-                    ## |  true  |     true      |     false      |  false |
-                    branch['active'] = branch.get('active', False) or active
-                    if remove and not active:
-                        branch['active'] = False
+            if branchname == "HEAD":
+                branchname = None
+            active = options.get('active', False) == True
+            ## | remove | branch.active | options.active | result |
+            ## |    x   |     false     |     false      |  false |
+            ## |    x   |     false     |     true       |  true  |
+            ## |    x   |     true      |     true       |  true  |
+            ## |  false |     true      |     false      |  true  |
+            ## |  true  |     true      |     false      |  false |
+            branch = self.projects[commit][repo_url][branchname]
+            branch['active'] = branch.get('active', False) or active
+            if remove and not active:
+                branch['active'] = False
 
 def debug():
     @ganarchy.group()
@@ -521,6 +574,10 @@ def debug():
         click.echo('Additional config search path: {}'.format(config_dirs))
         click.echo('Cache home: {}'.format(cache_home))
         click.echo('Data home: {}'.format(data_home))
+
+    @debug.command()
+    def configs():
+        pass
 
 debug()
 
@@ -542,9 +599,26 @@ def merge_configs(skip_errors, files):
         template = env.get_template('index.toml')
         click.echo(template.render(config=config))
 
+def update_remote_configs():
+    pass
+
 @ganarchy.command()
+@click.argument('out', required=True)
+def run(out):
+    """Runs ganarchy standalone.
+
+    This will run ganarchy so it regularly updates the output directory given by OUT.
+    Additionally, it'll also search for the following hooks in its config dirs:
+
+        - post_object_update_hook - executed after an object is updated.
+
+        - post_update_cycle_hook - executed after all objects in an update cycle are updated."""
+    pass
+
+@ganarchy.command()
+@click.option('--update/--no-update', default=True)
 @click.argument('project', required=False)
-def cron_target(project):
+def cron_target(update, project):
     """Runs ganarchy as a cron target."""
     conf = None
     # reverse order is intentional
@@ -585,7 +659,7 @@ def cron_target(project):
     generate_html = []
     c = conn.cursor()
     p = Project(conn, project, list_repos=True)
-    results = p.update()
+    results = p.update(update)
     for (repo, count) in results:
         if count is not None:
             entries.append((repo.url, count, repo.hash, repo.branch, project))
@@ -593,8 +667,9 @@ def cron_target(project):
     # sort stuff twice because reasons
     entries.sort(key=lambda x: x[1], reverse=True)
     generate_html.sort(key=lambda x: x[2], reverse=True)
-    c.executemany('''INSERT INTO "repo_history" ("url", "count", "head_commit", "branch", "project") VALUES (?, ?, ?, ?, ?)''', entries)
-    conn.commit()
+    if update:
+        c.executemany('''INSERT INTO "repo_history" ("url", "count", "head_commit", "branch", "project") VALUES (?, ?, ?, ?, ?)''', entries)
+        conn.commit()
     html_entries = []
     for (url, msg, count, branch) in generate_html:
         history = c.execute('''SELECT "count" FROM "repo_history" WHERE "url" = ? AND "branch" IS ? AND "project" IS ? ORDER BY "entry" ASC''', (url, branch, project)).fetchall()

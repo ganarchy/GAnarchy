@@ -2,3 +2,4 @@ Click==7.0
 Jinja2==2.10.1
 qtoml==0.2.4
 pyparsing==2.4.2
+requests==2.22.0
