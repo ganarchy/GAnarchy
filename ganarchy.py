@@ -458,7 +458,6 @@ class ConfigSource(abc.ABC):
         options are the options for the given project commit-tree path."""
         pass
 
-    @abc.abstractmethod
     def __getitem__(self, key):
         raise KeyError
 
@@ -482,33 +481,33 @@ class FileConfigSource(ConfigSource):
             return
 
     def get_project_commit_tree_paths(self):
-        for (project, pobj) in self.tomlobj['projects'].items():
-            for (uri, uobj) in pobj.items():
-                for (branch, options) in uobj.items():
-                    yield (project, uri, branch, options)
+        for r in Config.CONFIG_PATTERN_SANITIZE.match(self.tomlobj):
+            yield (v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1])
 
     def __getitem__(self, key):
+        if key in ('title', 'base_url', 'config_srcs'):
+            return self.tomlobj[key]
         return super().__getitem__(self, key)
 
 class RemoteConfigSource(ConfigSource):
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, uri):
+        self.uri = uri
+        self.tomlobj = None
 
     def update(self):
         raise NotImplementedError
 
     def get_project_commit_tree_paths(self):
-        for (project, pobj) in self.tomlobj['projects'].items():
-            for (uri, uobj) in pobj.items():
-                for (branch, options) in uobj.items():
-                    yield (project, uri, branch, options)
+        for r in Config.CONFIG_PATTERN_SANITIZE.match(self.tomlobj):
+            if v['branch'][1].get('active', False) in (True, False):
+                yield (v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1])
 
 class Config:
     # sanitize = skip invalid entries
     # validate = error on invalid entries
-    CONFIG_PATTERN_SANITIZE = abdl.compile("->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict->url:?$dict->branch:?$dict", dict(vars(builtins), **globals()))
+    CONFIG_PATTERN_SANITIZE = abdl.compile("->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict->url:?$dict->branch:?$dict", {'dict': dict})
     # TODO use a validating pattern instead?
-    CONFIG_PATTERN = abdl.compile("->commit->url->branch", dict(vars(builtins), **globals()))
+    CONFIG_PATTERN = abdl.compile("->commit->url->branch", {'dict': dict})
 
     def __init__(self, toml_file, base=None, remove=True):
         self.projects = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
@@ -532,17 +531,17 @@ class Config:
         self._update_projects(projects, remove=remove)
 
     def _update_projects(self, projects, remove, sanitize=True):
-        if sanitize:
-            m = Config.CONFIG_PATTERN_SANITIZE.match(projects)
-        else:
-            m = Config.CONFIG_PATTERN.match(projects)
+        m = (Config.CONFIG_PATTERN_SANITIZE if sanitize else Config.CONFIG_PATTERN).match(projects)
         for v in m:
             commit, repo_url, branchname, options = v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1]
             try:
                 u = urlparse(repo_url)
                 if not u:
                     raise ValueError
-                getattr(u, 'port') # raises ValueError if port is invalid
+                # also raises for invalid ports, see https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlparse
+                # "Reading the port attribute will raise a ValueError if an invalid port is specified in the URL. [...]"
+                if u.port == 0:
+                    raise ValueError
                 if u.scheme not in ('http', 'https'):
                     raise ValueError
                 if (u.hostname in self.blocked_domains) or (u.hostname.endswith(self.blocked_domain_suffixes)):
@@ -551,17 +550,11 @@ class Config:
                 continue
             if branchname == "HEAD":
                 branchname = None
-            active = options.get('active', False) == True
-            ## | remove | branch.active | options.active | result |
-            ## |    x   |     false     |     false      |  false |
-            ## |    x   |     false     |     true       |  true  |
-            ## |    x   |     true      |     true       |  true  |
-            ## |  false |     true      |     false      |  true  |
-            ## |  true  |     true      |     false      |  false |
+            active = options.get('active', None)
+            if active not in (True, False):
+                continue
             branch = self.projects[commit][repo_url][branchname]
-            branch['active'] = branch.get('active', False) or active
-            if remove and not active:
-                branch['active'] = False
+            branch['active'] = active or (branch.get('active', False) and not remove)
 
 def debug():
     @ganarchy.group()
