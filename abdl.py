@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""A Boneless Datastructure Language, version 1.0.0.
+"""A Boneless Datastructure Language, version 1.1.0.
 
 This is a language for matching mixed-type data-structures simiarly to how you'd match a string with regex.
 
@@ -24,9 +24,9 @@ The Input Language:
 
     The input language is used for matching the input and setting up variables. An ABDL expression
     is made of tokens that can represent variables, literals, commands or parameters. It must start with
-    an arrow, which must be followed by a variable,
-    literal, parameter, regex or subtree. Additionally, variables may be followed by a literal,
-    parameter or regex. In turn, those may be followed by one or more type tests.
+    an arrow, which must be followed by a variable, literal, parameter, regex or key match. Additionally,
+    variables may be followed by a literal, parameter or regex. In turn, those may be followed by one
+    or more type tests.
 
     A variable is a string of alphanumeric characters, not starting with a digit.
 
@@ -44,10 +44,10 @@ The Input Language:
     A type test is ``:`` followed by a parameter. A type test can be made "non-validating" by appending
     an ``?`` after the ``:``.
 
-    A subtree is an ABDL expression enclosed in ``(`` and ``)``, optionally prefixed with one or more type tests.
-    This matches keys.
+    A key match is an ABDL expression enclosed in ``[`` and ``]``, optionally prefixed with one or more type
+    tests. This matches keys. (The old syntax, ``(`` and ``)``, is deprecated.)
 
-    Example:
+    Examples:
         
         >>> for m in abdl.match("->X:?$dict->Y", {"foo": 1, "bar": {"baz": 2}}, {'dict': dict}):
         ...     print(m['X'][0], m['Y'][0], m['Y'][1])
@@ -80,6 +80,24 @@ The Input Language:
 import re
 
 from collections.abc import Mapping, Sequence, Iterator, Set
+
+class DeprecationError(Exception):
+    """Raised for deprecated features, if they are disabled.
+
+    This class controls warning/error behaviour of deprecated features."""
+    enable_key_match_compat = True
+    warn_key_match_compat = False
+
+    @classmethod
+    def warn_all(cls):
+        cls.warn_key_match_compat = True
+
+    @classmethod
+    def _on_keysubtree(cls, s, pos, toks):
+        if not cls.enable_key_match_compat:
+            raise cls("Use of deprecated key match compat feature", s, pos)
+        if cls.warn_key_match_compat:
+            print("Use of deprecated key match compat feature", s, pos)
 
 class PatternError(Exception):
     """Raised for invalid input or output expressions."""
@@ -315,7 +333,8 @@ def _build_syntax():
     parameter = (Suppress("$") + skippable + identifier).setParseAction(lambda toks: [_Param(toks)])
     ty = (Suppress(":") + skippable + Suppress("$") + identifier).setParseAction(lambda toks: [_Ty(toks)])
     # support for objects-as-keys
-    keysubtree = (Suppress("(") + Group(ty[...] + subtree[1,...]) + (Suppress(")") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_Subtree(toks)])
+    keysubtree = (Suppress("(").setParseAction(DeprecationError._on_keysubtree) + Group(ty[...] + subtree[1,...]) + (Suppress(")") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_Subtree(toks)])
+    keysubtree |= (Suppress("[") + Group(ty[...] + subtree[1,...]) + (Suppress("]") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_Subtree(toks)])
     # represents key matching - switches from "key" to "value"
     tag = (identifier + Optional(parameter | re_literal | keysubtree) | parameter | str_literal | re_literal | keysubtree) + ty[...] + Empty().setParseAction(lambda: [_End()])
     # arrow and tag or we give up

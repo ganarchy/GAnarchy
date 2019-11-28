@@ -11,6 +11,9 @@ import re
 
 import traceback
 
+
+abdl.DeprecationError.enable_key_match_compat = False
+
 # use abdl's _pairs for consistency.
 pairs = abdl._pairs
 
@@ -156,7 +159,7 @@ def test_multi_type_with_validation_errors(foo, pat):
                 raise abdl.ValidationError
     assert all(LogAndCompare(pat.match(foo), deep(foo)))
 
-@hypothesis.given(st.dictionaries(st.frozensets(st.text()), st.text()), st.just(abdl.compile("->(:?$sets->A)->D", {'sets': collections.abc.Set})))
+@hypothesis.given(st.dictionaries(st.frozensets(st.text()), st.text()), st.just(abdl.compile("->[:?$sets->A]->D", {'sets': collections.abc.Set})))
 def test_subtree_partial(foo, pat):
     def deep(foo):
         for x in pairs(foo):
