@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""A Boneless Datastructure Language, version 1.1.0.
+"""A Boneless Datastructure Language, version 2.0.0.
 
 This is a language for matching mixed-type data-structures simiarly to how you'd match a string with regex.
 
@@ -45,7 +45,7 @@ The Input Language:
     an ``?`` after the ``:``.
 
     A key match is an ABDL expression enclosed in ``[`` and ``]``, optionally prefixed with one or more type
-    tests. This matches keys. (The old syntax, ``(`` and ``)``, is deprecated.)
+    tests. This matches keys.
 
     Examples:
         
@@ -85,19 +85,12 @@ class DeprecationError(Exception):
     """Raised for deprecated features, if they are disabled.
 
     This class controls warning/error behaviour of deprecated features."""
-    enable_key_match_compat = True
-    warn_key_match_compat = False
+    #enable_key_match_compat = False
+    #warn_key_match_compat = False
 
     @classmethod
     def warn_all(cls):
-        cls.warn_key_match_compat = True
-
-    @classmethod
-    def _on_keysubtree(cls, s, pos, toks):
-        if not cls.enable_key_match_compat:
-            raise cls("Use of deprecated key match compat feature", s, pos)
-        if cls.warn_key_match_compat:
-            print("Use of deprecated key match compat feature", s, pos)
+        pass
 
 class PatternError(Exception):
     """Raised for invalid input or output expressions."""
@@ -333,8 +326,7 @@ def _build_syntax():
     parameter = (Suppress("$") + skippable + identifier).setParseAction(lambda toks: [_Param(toks)])
     ty = (Suppress(":") + skippable + Suppress("$") + identifier).setParseAction(lambda toks: [_Ty(toks)])
     # support for objects-as-keys
-    keysubtree = (Suppress("(").setParseAction(DeprecationError._on_keysubtree) + Group(ty[...] + subtree[1,...]) + (Suppress(")") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_Subtree(toks)])
-    keysubtree |= (Suppress("[") + Group(ty[...] + subtree[1,...]) + (Suppress("]") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_Subtree(toks)])
+    keysubtree = (Suppress("[") + Group(ty[...] + subtree[1,...]) + (Suppress("]") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_Subtree(toks)])
     # represents key matching - switches from "key" to "value"
     tag = (identifier + Optional(parameter | re_literal | keysubtree) | parameter | str_literal | re_literal | keysubtree) + ty[...] + Empty().setParseAction(lambda: [_End()])
     # arrow and tag or we give up
