@@ -16,66 +16,75 @@
 
 """A Boneless Datastructure Language, version 2.0.0.
 
-This is a language for matching mixed-type data-structures simiarly to how you'd match a string with regex.
+ABDL expressions are regex-like constructs for matching and validating object structures. They can be used
+with JSON and similar formats, and even self-referential data structures.
 
-The language has two parts, the Input Langauge and the Output Language.
+Language Reference:
 
-The Input Language:
+    ABDL expressions have the ability to iterate, index, validate and filter data structures. This is
+    done with the use of the syntax elements listed below.
 
-    The input language is used for matching the input and setting up variables. An ABDL expression
-    is made of tokens that can represent variables, literals, commands or parameters. It must start with
-    an arrow, which must be followed by a variable, literal, parameter, regex or key match. Additionally,
-    variables may be followed by a literal, parameter or regex. In turn, those may be followed by one
-    or more type tests.
+    Syntax Elements:
 
-    A variable is a string of alphanumeric characters, not starting with a digit.
+        An ABDL expression is a sequence of zero or more sequences starting with arrows followed by zero or
+        more subvalues.
 
-    A literal is a string delimited by single quotes. (use ``%'`` to escape ``'`` and ``%%`` to escape ``%``)
-    A literal can be made "non-validating" by appending an ``?`` after it.
+        An arrow is ``->`` and indicates indexing/iteration (Mappings, Sequences, Sets). It must be followed
+        by a variable, literal, parameter, regex or key match.
 
-    A regex is a regex delimited by forward slashes. (use ``%/`` to escape ``/`` and ``%%`` to escape ``%``)
-    A regex can be made "non-validating" by appending an ``?`` after it.
+        A variable is a string of alphanumeric characters, not starting with a digit. It may be followed by a
+        literal, parameter, regex, key match, or one or more type tests. A ``(key, value)`` tuple containing
+        the corresponding matched element will be identified by this name in the results dict.
 
-    A parameter is the symbol ``$`` followed by a string of alphanumeric characters, not starting with
-    a digit. A parameter can be made "non-validating" by appending an ``?`` after it.
+        A literal is a string delimited by single quotes (use ``%'`` to escape ``'`` and ``%%`` to escape ``%``).
+        A literal can be made "non-validating" by appending an ``?`` after it. It may be followed by one or more
+        type tests. It is exactly equivalent to indexing an object with a string key.
 
-    An arrow is ``->`` and indicates indexing/iteration (dicts, sets, frozensets, lists, tuples).
+        A parameter is the symbol ``$`` followed by a string of alphanumeric characters, not starting with
+        a digit. A parameter can be made "non-validating" by appending an ``?`` after it. It may be followed by
+        one or more type tests. It is exactly equivalent to indexing an object with an arbitrary object key.
 
-    A type test is ``:`` followed by a parameter. A type test can be made "non-validating" by appending
-    an ``?`` after the ``:``.
+        A regex is an RE, as defined by the ``re`` module, delimited by forward slashes (use ``%/`` to escape
+        ``/`` and ``%%`` to escape ``%``). A regex can be made "non-validating" by appending an ``?`` after it.
+        It may be followed by one or more type tests. It attempts to match each key in the object.
 
-    A key match is an ABDL expression enclosed in ``[`` and ``]``, optionally prefixed with one or more type
-    tests. This matches keys.
+        A type test is ``:`` followed by a parameter. A type test can be made "non-validating" by appending
+        an ``?`` after the ``:``. It attempts to match the type of each matched value in the object.
+
+        A key match is an ABDL expression enclosed in ``[`` and ``]``, optionally prefixed with one or more type
+        tests. This matches keys (including the type tests).
+
+        A subvalue is an ABDL expression enclosed in ``(`` and ``)``. This allows matching multiple values on
+        the same object.
+
+        Some syntax elements can be validating or non-validating. Validating syntax elements will raise a
+        :py:exc:`abdl.ValidationError` whenever a non-matching element is encountered, whereas non-validating
+        ones will skip them. Note that it is possible for a validating syntax element to still yield results
+        before raising a :py:exc:`abdl.ValidationError`, so one needs to be careful when writing code where such
+        behaviour could result in a security vulnerability.
 
     Examples:
-        
+
+        >>> import abdl
         >>> for m in abdl.match("->X:?$dict->Y", {"foo": 1, "bar": {"baz": 2}}, {'dict': dict}):
         ...     print(m['X'][0], m['Y'][0], m['Y'][1])
         bar baz 2
 
+        >>> pat = abdl.compile('''-> 'projects'?
+        ...                          -> commit /[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/? :?$dict
+        ...                             -> url :?$dict
+        ...                                -> branch :?$dict''', {'dict': dict})
+        >>> data = {"projects": {
+        ...     "385e734a52e13949a7a5c71827f6de920dbfea43": {
+        ...         "https://soniex2.autistic.space/git-repos/ganarchy.git": {"HEAD": {"active": True}}
+        ...     }
+        ... }}
+        >>> for m in pat.match(data):
+        ...     print(m['commit'][0], m['url'][0], m['branch'][0], m['branch'][1])
+        385e734a52e13949a7a5c71827f6de920dbfea43 https://soniex2.autistic.space/git-repos/ganarchy.git HEAD {'active': True}
+
     (If ``:?$dict`` wasn't present, a TypeError would be raised when trying to iterate the ``1`` from ``"foo": 1``.)
 """
-#"""
-#The Output Language [NYI]:
-#
-#    The output language is used for transforming the input data into something potentially more useful.
-#    Its tokens represent variables or commands.
-#
-#    A variable must be bound on the pattern before being used on the transformer.
-#
-#    The following commands are accepted:
-#        * ``!`` - indicates that the *key* corresponding to the variable shall be used, not the value.
-#
-#    An output expression always looks like a tuple. That is, it starts with ``(`` and ends with ``)``,
-#    and contains comma-separated values. At least one comma is required, and a trailing comma should
-#    always be used.
-#
-#    Example [NYI]:
-#
-#        >>> for m in abdl.transform("'projects'->?j2/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/->?j3->?j4", "(j2!,j3!,j4!,j4)", {"projects": {"385e734a52e13949a7a5c71827f6de920dbfea43": {"https://soniex2.autistic.space/git-repos/ganarchy.git": {"HEAD": {"active": True}}}}}):
-#        ...     print(m)
-#        ('385e734a52e13949a7a5c71827f6de920dbfea43', 'https://soniex2.autistic.space/git-repos/ganarchy.git', 'HEAD', {'active': True})
-#"""
 
 import re
 
@@ -90,6 +99,7 @@ class DeprecationError(Exception):
 
     @classmethod
     def warn_all(cls):
+        """Enables all deprecation warnings."""
         pass
 
 class PatternError(Exception):
@@ -137,6 +147,7 @@ class PatternError(Exception):
 
 class ValidationError(Exception):
     """Raised when the object tree doesn't validate against the given pattern."""
+    # FIXME TODO?
 
 class _PatternElement:
     def on_not_in_key(self, frame, path, defs):
@@ -158,6 +169,9 @@ class _StringKey(_PatternElement):
     def __init__(self, toks):
         self.key = toks[0]
         self.skippable = toks[1] == '?'
+
+    def on_in_key(self, frame, path, defs):
+        return self.on_not_in_key(frame, path, defs)
 
     def on_not_in_key(self, frame, path, defs):
         path[-1].iterator = self.extract(path[-1].parent)
@@ -199,7 +213,7 @@ class _RegexKey(_PatternElement):
                 if not self.skippable:
                     raise ValidationError
 
-class _Subtree(_PatternElement):
+class _KeySubtree(_PatternElement):
     def __init__(self, toks):
         self.key = toks[0]
         self.skippable = toks[1] == '?'
@@ -222,6 +236,25 @@ class _Subtree(_PatternElement):
         for sub in self.key:
             sub.collect_params(res)
 
+class _ValueSubtree(_PatternElement):
+    def __init__(self, toks):
+        self.key = toks[0]
+        self.skippable = toks[1] == '?'
+
+    def on_not_in_key(self, frame, path, defs):
+        assert not path[-1].empty
+        path.append(_Holder(key=None, value=None, name=None, parent=path[-1].value, empty=False, subtree=True))
+        path[-1].iterator = self.filter(path[-1].parent, defs)
+        return True
+
+    def filter(self, parent, defs):
+        for x in _match_helper(self.key, defs, parent):
+            yield (x, parent)
+
+    def collect_params(self, res: list):
+        for sub in self.key:
+            sub.collect_params(res)
+
 class _Ident(_PatternElement):
     def __init__(self, toks):
         self.key = toks[0]
@@ -236,6 +269,9 @@ class _Param(_PatternElement):
         assert isinstance(toks[1], _Ident)
         self.skippable = toks[0] == '?'
         self.key = toks[1].key
+
+    def on_in_key(self, frame, path, defs):
+        return self.on_not_in_key(frame, path, defs)
 
     def on_not_in_key(self, frame, path, defs):
         path[-1].iterator = self.extract(path[-1].parent, defs[self.key])
@@ -326,12 +362,14 @@ def _build_syntax():
     parameter = (Suppress("$") + skippable + identifier).setParseAction(lambda toks: [_Param(toks)])
     ty = (Suppress(":") + skippable + Suppress("$") + identifier).setParseAction(lambda toks: [_Ty(toks)])
     # support for objects-as-keys
-    keysubtree = (Suppress("[") + Group(ty[...] + subtree[1,...]) + (Suppress("]") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_Subtree(toks)])
+    keysubtree = (Suppress("[") + Group(ty[...] + subtree) + (Suppress("]") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_KeySubtree(toks)])
     # represents key matching - switches from "key" to "value"
-    tag = (identifier + Optional(parameter | re_literal | keysubtree) | parameter | str_literal | re_literal | keysubtree) + ty[...] + Empty().setParseAction(lambda: [_End()])
-    # arrow and tag or we give up
-    subtree <<= arrow + tag
-    return (subtree | CharsNotIn("").setParseAction(PatternError._unexpected_tok))[...].parseWithTabs()
+    tag = (identifier + Optional(parameter | str_literal | re_literal | keysubtree) | parameter | str_literal | re_literal | keysubtree) + ty[...] + Empty().setParseAction(lambda: [_End()])
+    # multiple value matching
+    valuesubtree = (Suppress("(") + Group(subtree) + (Suppress(")") | CharsNotIn("").setParseAction(PatternError._unexpected_tok) | StringEnd().setParseAction(PatternError._unexpected_tok)) + Optional("?", default="")).setParseAction(lambda toks: [_ValueSubtree(toks)])
+    # arrow and tag, value subtree
+    subtree <<= (arrow + tag)[...] + (valuesubtree + Empty().setParseAction(lambda: [_End()]))[...]
+    return ((subtree | CharsNotIn("").setParseAction(PatternError._unexpected_tok)) + StringEnd()).parseWithTabs()
 
 _built_syntax = _build_syntax()
 
@@ -347,14 +385,14 @@ def _pairs(o):
         raise TypeError
 
 class _Holder:
-    def __init__(self, key, value, name, parent=None, it=None, empty=False):
+    def __init__(self, key, value, name, parent=None, it=None, empty=False, subtree=False):
         self.name = name
         self.key = key
         self.value = value
         self.empty = empty
         self._it = it
         self.parent = parent
-        self.subtree = False
+        self.subtree = subtree
 
     @property
     def iterator(self):
@@ -424,30 +462,63 @@ def _match_helper(ops, defs, tree):
                 in_key = op.on_not_in_key(frame, path, defs)
 
 class Pattern:
+    """A compiled pattern.
+    """
+
     def __init__(self, pattern, defs):
         try:
-            self.ops = _built_syntax.parseString(pattern)
+            self._ops = _built_syntax.parseString(pattern)
         except PatternError as e:
             e._normalize(pattern, defs)
             raise
         else:
-            self.params = []
-            for op in self.ops:
-                op.collect_params(self.params)
-            self.defs = {param: defs[param] for param in self.params}
+            self._params = []
+            for op in self._ops:
+                op.collect_params(self._params)
+            self._defs = {param: defs[param] for param in self._params}
 
-    def match(self, tree):
-        return _match_helper(self.ops, self.defs, tree)
+    def match(self, obj):
+        """Matches this compiled pattern against the given object.
 
-#    def transform(self, tree, replacement):
-#        pass
+        Args:
+            obj: The object to match against.
+
+        Returns:
+            An iterator. This iterator yields ``(key, value)`` pairs
+            wrapped in a dict for each variable in the pattern.
+
+        """
+        return _match_helper(self._ops, self._defs, obj)
 
 def compile(pattern, defs={}):
+    """Compiles the pattern and returns a compiled :py:class:`abdl.Pattern` object.
+
+    Args:
+        pattern (str): The pattern. Refer to module-level documentation for
+            pattern syntax.
+        defs (dict): The parameter list. Used by parameters in the pattern.
+
+    Returns:
+        Pattern: A compiled pattern object.
+
+    """
     # TODO caching
     return Pattern(pattern, defs)
 
 def match(pattern, obj, defs={}):
-    return compile(pattern, defs).match(obj)
+    """Matches the pattern against the given obj.
 
-#def transform(pattern, replacement, obj, defs={}):
-#    raise NotImplementedError
+    This method is equivalent to ``abdl.compile(pattern, defs).match(obj)``.
+
+    Args:
+        pattern (str): The pattern. Refer to module-level documentation for
+            pattern syntax.
+        obj: The object to match against.
+        defs (dict): The parameter list. Used by parameters in the pattern.
+
+    Returns:
+        An iterator. This iterator yields ``(key, value)`` pairs
+        wrapped in a dict for each variable in the pattern.
+
+    """
+    return compile(pattern, defs).match(obj)

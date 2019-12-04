@@ -182,6 +182,10 @@ def test_param(foo, pat):
                     yield {"X": x, "Z": z}
     assert all(LogAndCompare(pat.match(foo), deep(foo)))
 
+def test_basic_value_subtree():
+    matcher = abdl.match("(->foo'foo')(->bar'bar')", {'foo': 1, 'bar': 2})
+    assert list(matcher) == [{'foo': ('foo', 1), 'bar': ('bar', 2)}]
+
 # FIXME
 #@hypothesis.given(objtree, st.text())
 #def test_exhaustive(foo, pat):
