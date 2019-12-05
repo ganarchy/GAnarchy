@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""A Boneless Datastructure Language, version 2.0.0.
+"""A Boneless Datastructure Language, version 2.0.1.
 
 ABDL expressions are regex-like constructs for matching and validating object structures. They can be used
 with JSON and similar formats, and even self-referential data structures.
@@ -462,7 +462,11 @@ def _match_helper(ops, defs, tree):
                 in_key = op.on_not_in_key(frame, path, defs)
 
 class Pattern:
-    """A compiled pattern.
+    """A compiled pattern object.
+
+    Warning:
+        Do not create instances of this class manually. Use :py:func:`abdl.compile`.
+
     """
 
     def __init__(self, pattern, defs):
