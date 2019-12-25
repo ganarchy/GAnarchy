@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-
-# GAnarchy - project homepage generator
+# GAnarchy - decentralized project hub
 # Copyright (C) 2019  Soni L.
 #
 # This program is free software: you can redistribute it and/or modify
@@ -25,15 +23,16 @@ import re
 import sqlite3
 import subprocess
 
+import abdl
 import click
 import jinja2
 import qtoml
 import requests
 
-import abdl
-
 from collections import defaultdict
 from urllib.parse import urlparse
+
+import ganarchy.config
 
 MIGRATIONS = {
         "toml-config": (
@@ -440,75 +439,7 @@ class GAnarchy:
         else:
             self.projects = None
 
-class ConfigSource(abc.ABC):
-    @abc.abstractmethod
-    def update(self):
-        """Refreshes the config if necessary."""
-        pass
-
-    def is_domain_blocked(self, domain):
-        """Returns True if the given domain is blocked."""
-        return False
-
-    @abc.abstractmethod
-    def get_project_commit_tree_paths(self):
-        """Returns an iterator of (project, URI, branch, options) tuples.
-
-        project is the project commit hash, URI is the repo URI, branch is the branch name and
-        options are the options for the given project commit-tree path."""
-        pass
-
-    def __getitem__(self, key):
-        raise KeyError
-
-class FileConfigSource(ConfigSource):
-    def __init__(self, filename):
-        self.exists = False
-        self.last_updated = None
-        self.filename = filename
-        self.tomlobj = None
-        self.update()
-
-    def update(self):
-        try:
-            updtime = self.last_updated
-            self.last_updated = os.stat(self.filename).st_mtime
-            if not self.exists or updtime != self.last_updated:
-                with open(self.filename) as f:
-                    self.tomlobj = qtoml.load(f)
-            self.exists = True
-        except OSError:
-            return
-
-    def get_project_commit_tree_paths(self):
-        for r in Config.CONFIG_PATTERN_SANITIZE.match(self.tomlobj):
-            yield (v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1])
-
-    def __getitem__(self, key):
-        if key in ('title', 'base_url', 'config_srcs'):
-            return self.tomlobj[key]
-        return super().__getitem__(self, key)
-
-class RemoteConfigSource(ConfigSource):
-    def __init__(self, uri):
-        self.uri = uri
-        self.tomlobj = None
-
-    def update(self):
-        raise NotImplementedError
-
-    def get_project_commit_tree_paths(self):
-        for r in Config.CONFIG_PATTERN_SANITIZE.match(self.tomlobj):
-            if v['branch'][1].get('active', False) in (True, False):
-                yield (v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1])
-
 class Config:
-    # sanitize = skip invalid entries
-    # validate = error on invalid entries
-    CONFIG_PATTERN_SANITIZE = abdl.compile("->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict->url:?$dict->branch:?$dict", {'dict': dict})
-    # TODO use a validating pattern instead?
-    CONFIG_PATTERN = abdl.compile("->commit->url->branch", {'dict': dict})
-
     def __init__(self, toml_file, base=None, remove=True):
         self.projects = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
         config_data = qtoml.load(toml_file)
@@ -531,7 +462,7 @@ class Config:
         self._update_projects(projects, remove=remove)
 
     def _update_projects(self, projects, remove, sanitize=True):
-        m = (Config.CONFIG_PATTERN_SANITIZE if sanitize else Config.CONFIG_PATTERN).match(projects)
+        m = (ganarchy.config.CONFIG_PATTERN_SANITIZE if sanitize else ganarchy.config.CONFIG_PATTERN).match(projects)
         for v in m:
             commit, repo_url, branchname, options = v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1]
             try:
@@ -555,24 +486,6 @@ class Config:
                 continue
             branch = self.projects[commit][repo_url][branchname]
             branch['active'] = active or (branch.get('active', False) and not remove)
-
-def debug():
-    @ganarchy.group()
-    def debug():
-        pass
-
-    @debug.command()
-    def paths():
-        click.echo('Config home: {}'.format(config_home))
-        click.echo('Additional config search path: {}'.format(config_dirs))
-        click.echo('Cache home: {}'.format(cache_home))
-        click.echo('Data home: {}'.format(data_home))
-
-    @debug.command()
-    def configs():
-        pass
-
-debug()
 
 @ganarchy.command()
 @click.option('--skip-errors/--no-skip-errors', default=False)
@@ -678,6 +591,3 @@ def cron_target(update, project):
                                # I don't think this thing supports deprecating the above?
                                project        = p,
                                ganarchy       = instance))
-
-if __name__ == "__main__":
-    ganarchy()
