@@ -1,6 +1,7 @@
 GAnarchy
 ========
 
+<!-- FIXME this README is crap -->
 GAnarchy is a Project Page Generator focused on giving forks of a project the same visibility as the original repo.
 More importantly, it's a tool to help fight against BDFLs and other forms of centralized project management.
 
