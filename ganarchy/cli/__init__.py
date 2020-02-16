@@ -16,21 +16,6 @@
 
 import click
 
-import ganarchy
-import ganarchy.config
-
-@ganarchy.ganarchy.group()
-def debug():
+@click.group()
+def main():
     pass
-
-@debug.command()
-def paths():
-    click.echo('Config home: {}'.format(ganarchy.config_home))
-    click.echo('Additional config search path: {}'.format(ganarchy.config_dirs))
-    click.echo('Cache home: {}'.format(ganarchy.cache_home))
-    click.echo('Data home: {}'.format(ganarchy.data_home))
-
-@debug.command()
-def configs():
-    pass
-

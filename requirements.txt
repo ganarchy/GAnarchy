@@ -1,5 +1,11 @@
+-e git+https://soniex2.autistic.space/git-repos/abdl.git@1b26ad799217af7e187fdae78e862a6bf46e5591#egg=gan0f74bd87a23b515b45da7e6f5d9cc82380443dab
+certifi==2019.11.28
+chardet==3.0.4
 Click==7.0
+idna==2.8
 Jinja2==2.10.1
-qtoml==0.2.4
+MarkupSafe==1.1.1
 pyparsing==2.4.2
+qtoml==0.2.4
 requests==2.22.0
+urllib3==1.25.7

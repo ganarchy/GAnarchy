@@ -15,9 +15,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # The base CLI
+import ganarchy.cli
+
+# FIXME this shouldn't be here
 import ganarchy
 
 # Additional CLI commands
-import ganarchy.debug
+import ganarchy.cli.debug
 
-ganarchy.ganarchy(prog_name='ganarchy')
+ganarchy.cli.main(prog_name='ganarchy')

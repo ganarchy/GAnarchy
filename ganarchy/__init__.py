@@ -32,7 +32,7 @@ import requests
 from collections import defaultdict
 from urllib.parse import urlparse
 
-import ganarchy.config
+import ganarchy.config as m_ganarchy_config
 
 MIGRATIONS = {
         "toml-config": (
@@ -210,10 +210,8 @@ def get_env():
     env.filters['tomle'] = env.filters['tomlescape']
     return env
 
-
-@click.group()
-def ganarchy():
-    pass
+# FIXME
+from ganarchy.cli import main as ganarchy
 
 @ganarchy.command()
 def initdb():
@@ -457,12 +455,11 @@ class Config:
         # TODO re.compile("(^" + "|^".join(map(re.escape, domains)) + "|" + "|".join(map(re.escape, suffixes) + ")$")
         if base:
             # FIXME is remove=remove the right thing to do?
-            self._update_projects(base.projects, remove=remove, sanitize=False) # already sanitized
-        projects = config_data.get('projects', {})
-        self._update_projects(projects, remove=remove)
+            self._update_projects({'projects': base.projects}, remove=remove, sanitize=False) # already sanitized
+        self._update_projects(config_data, remove=remove)
 
     def _update_projects(self, projects, remove, sanitize=True):
-        m = (ganarchy.config.CONFIG_PATTERN_SANITIZE if sanitize else ganarchy.config.CONFIG_PATTERN).match(projects)
+        m = (m_ganarchy_config.CONFIG_REPOS_SANITIZE if sanitize else m_ganarchy_config.CONFIG_REPOS).match(projects)
         for v in m:
             commit, repo_url, branchname, options = v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1]
             try:
