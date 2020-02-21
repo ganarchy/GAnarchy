@@ -27,7 +27,7 @@ from enum import Enum
 CONFIG_REPOS_SANITIZE = abdl.compile("""->'projects'?:?$dict
                                           ->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict
                                             ->url:?$dict
-                                              ->branch:?$dict(->'active'?:?$bool)""", {'bool': bool, 'dict': dict})
+                                              ->branch:?$dict(->'active'?:?$bool)""", {'bool': bool, 'dict': dict, 'uri': object})#URIValidator})
 CONFIG_REPOS = abdl.compile("->'projects'->commit->url->branch", {'dict': dict})
 
 CONFIG_TITLE_SANITIZE = abdl.compile("""->title'title'?:?$str""", {'str': str})
@@ -41,6 +41,13 @@ CONFIG_SRCS_VALIDATE = abdl.compile("""->'config_srcs':$list->src:$str""", {'lis
 class ConfigProperty(Enum):
     TITLE = 1
     BASE_URL = 2
+
+class PCTP:
+    def __init__(self, project_commit, uri, branch, options):
+        self.project_commit = project_commit
+        self.uri = uri
+        self.branch = branch
+        self.options = options
 
 class ConfigSource(abc.ABC):
     @abc.abstractmethod
@@ -121,8 +128,8 @@ class FileConfigSource(ConfigSource):
                 with open(self.filename) as f:
                     self.tomlobj = qtoml.load(f)
             self.file_exists = True
-        except OSError:
-            return
+        except (OSError, UnicodeDecodeError, qtoml.decoder.TOMLDecodeError) as e:
+            return e
 
     def exists(self):
         return self.file_exists
@@ -132,8 +139,8 @@ class FileConfigSource(ConfigSource):
             yield r['src'][1]
 
     def get_project_commit_tree_paths(self):
-        for r in CONFIG_PATTERN_SANITIZE.match(self.tomlobj):
-            yield (r['commit'][0], r['url'][0], r['branch'][0], r['branch'][1])
+        for r in CONFIG_REPOS_SANITIZE.match(self.tomlobj):
+            yield PCTP(r['commit'][0], r['url'][0], r['branch'][0], r['branch'][1])
 
     @classmethod
     def get_supported_properties(cls):
@@ -152,13 +159,28 @@ class RemoteConfigSource(ConfigSource):
         return self.remote_exists
 
     def get_project_commit_tree_paths(self):
-        for r in CONFIG_PATTERN_SANITIZE.match(self.tomlobj):
+        for r in CONFIG_REPOS_SANITIZE.match(self.tomlobj):
             yield (r['commit'][0], r['url'][0], r['branch'][0], r['branch'][1])
 
 class ConfigManager:
-    def __init__(self):
-        # FIXME ???
-        self.sources = []
+    """A ConfigManager takes care of managing config sources and
+    collecting their details."""
+    def __init__(self, sources):
+        self.sources = sources
+
+    def update(self):
+        for source in self.sources:
+            try:
+                source.update()
+            except:
+                raise # TODO
+
+    @classmethod
+    def new_default(cls):
+        from ganarchy import config_home, config_dirs
+        base_src = [FileConfigSource(config_home + "/config.toml")]
+        extra_srcs = [FileConfigSource(d + "/config.toml") for d in config_dirs]
+        return cls(base_src + extra_srcs)
 
 # class Config:
 #     def __init__(self, toml_file, base=None, remove=True):

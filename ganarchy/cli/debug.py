@@ -36,35 +36,20 @@ def paths():
 def configs():
     def print_conf(conf):
         click.echo("\tRepos:")
-        for i, repo in enumerate(ganarchy.config.CONFIG_REPOS.match({'projects': conf.projects})):
+        for i, pctp in enumerate(conf.get_project_commit_tree_paths()):
             click.echo("\t\t{}.".format(i))
-            click.echo("\t\t\tProject: {}".format(repo['commit'][0]))
-            click.echo("\t\t\tURI: {}".format(repo['url'][0]))
-            click.echo("\t\t\tBranch: {}".format(repo['branch'][0]))
-            click.echo("\t\t\tActive: {}".format(repo['branch'][1] == {'active': True}))
+            click.echo("\t\t\tProject: {}".format(pctp.project_commit))
+            click.echo("\t\t\tURI: {}".format(pctp.uri))
+            click.echo("\t\t\tBranch: {}".format(pctp.branch))
+            click.echo("\t\t\tActive: {}".format(pctp.options == {'active': True}))
 
+    confs = ganarchy.config.ConfigManager.new_default()
+    click.echo("Configs: {}".format(confs.sources))
     click.echo("Breaking down the configs.")
-    conf = None
-    # reverse order is intentional
-    for d in reversed(ganarchy.config_dirs):
-        click.echo("Config: {}/config.toml".format(d))
-        try:
-            f = open(d + "/config.toml", 'r', encoding='utf-8', newline='')
-            conf = ganarchy.Config(f, conf)
-            click.echo("Updated entries:")
+    for conf in reversed(confs.sources):
+        click.echo("Config: {}".format(conf.filename))
+        e = conf.update()
+        if e is None:
             print_conf(conf)
-            f.close()
-        except (OSError, UnicodeDecodeError, qtoml.decoder.TOMLDecodeError) as e:
+        else:
             click.echo("\tError: {}".format(e))
-    try:
-        click.echo("Config: {}/config.toml".format(ganarchy.config_home))
-        f = open(ganarchy.config_home + "/config.toml", 'r', encoding='utf-8', newline='')
-        conf = ganarchy.Config(f, conf)
-        click.echo("Updated entries:")
-        print_conf(conf)
-        click.echo("-----")
-        click.echo("\tTitle: {}".format(conf.base_url))
-        click.echo("\tBase URI: {}".format(conf.base_url))
-        f.close()
-    except (OSError, UnicodeDecodeError, qtoml.decoder.TOMLDecodeError) as e:
-        click.echo("\tError: {}".format(e))
