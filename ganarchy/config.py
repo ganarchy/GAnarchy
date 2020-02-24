@@ -26,7 +26,7 @@ from enum import Enum
 # validate = error on invalid entries
 CONFIG_REPOS_SANITIZE = abdl.compile("""->'projects'?:?$dict
                                           ->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict
-                                            ->url:?$dict
+                                            ->url[:?$uri]:?$dict
                                               ->branch:?$dict(->'active'?:?$bool)""", {'bool': bool, 'dict': dict, 'uri': object})#URIValidator})
 CONFIG_REPOS = abdl.compile("->'projects'->commit->url->branch", {'dict': dict})
 
