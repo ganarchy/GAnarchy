@@ -21,13 +21,34 @@ import abdl
 import qtoml
 
 from enum import Enum
+from urllib.parse import urlparse
+
+class URIPredicate(abdl.predicates.Predicate):
+    def __init__(self, ports=range(1,65536), schemes=('http', 'https')):
+        self.ports = ports
+        self.schemes = schemes
+
+    def accept(self, obj):
+        try:
+            u = urlparse(obj)
+            if not u:
+                return False
+            # also raises for invalid ports, see https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlparse
+            # "Reading the port attribute will raise a ValueError if an invalid port is specified in the URL. [...]"
+            if u.port is not None and u.port not in self.ports:
+                return False
+            if u.scheme not in self.schemes:
+                return False
+        except ValueError:
+            return False
+        return True
 
 # sanitize = skip invalid entries
 # validate = error on invalid entries
 CONFIG_REPOS_SANITIZE = abdl.compile("""->'projects'?:?$dict
                                           ->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict
                                             ->url[:?$uri]:?$dict
-                                              ->branch:?$dict(->'active'?:?$bool)""", {'bool': bool, 'dict': dict, 'uri': object})#URIValidator})
+                                              ->branch:?$dict(->'active'?:?$bool)""", {'bool': bool, 'dict': dict, 'uri': URIPredicate()})
 CONFIG_REPOS = abdl.compile("->'projects'->commit->url->branch", {'dict': dict})
 
 CONFIG_TITLE_SANITIZE = abdl.compile("""->title'title'?:?$str""", {'str': str})
