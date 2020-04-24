@@ -19,7 +19,7 @@ import qtoml
 
 import ganarchy
 import ganarchy.cli
-import ganarchy.config
+import ganarchy.data
 
 @ganarchy.cli.main.group()
 def debug():
@@ -32,24 +32,67 @@ def paths():
     click.echo('Cache home: {}'.format(ganarchy.cache_home))
     click.echo('Data home: {}'.format(ganarchy.data_home))
 
+def print_data_source(data_source):
+    if ganarchy.data.DataProperty.REPO_LIST_SOURCES in data_source.get_supported_properties():
+        click.echo("\tRepo list sources:")
+        try:
+            iterator = data_source.get_property_values(ganarchy.data.DataProperty.REPO_LIST_SOURCES)
+        except LookupError:
+            click.echo("\t\tNone")
+        else:
+            for i, rls in enumerate(iterator, 1):
+                click.echo("\t\t{}.".format(i))
+                click.echo("\t\t\tURI: {}".format(rls.uri))
+                click.echo("\t\t\tOptions: {}".format(rls.options))
+                click.echo("\t\t\tActive: {}".format(rls.active))
+
+    if ganarchy.data.DataProperty.VCS_REPOS in data_source.get_supported_properties():
+        click.echo("\tRepos:")
+        try:
+            iterator = data_source.get_property_values(ganarchy.data.DataProperty.VCS_REPOS)
+        except LookupError:
+            click.echo("\t\tNone")
+        else:
+            for i, pctp in enumerate(iterator, 1):
+                click.echo("\t\t{}.".format(i))
+                click.echo("\t\t\tProject: {}".format(pctp.project_commit))
+                click.echo("\t\t\tURI: {}".format(pctp.uri))
+                click.echo("\t\t\tBranch: {}".format(pctp.branch))
+                click.echo("\t\t\tOptions: {}".format(pctp.options))
+                click.echo("\t\t\tActive: {}".format(pctp.active))
+
 @debug.command()
 def configs():
-    def print_conf(conf):
-        click.echo("\tRepos:")
-        for i, pctp in enumerate(conf.get_project_commit_tree_paths()):
-            click.echo("\t\t{}.".format(i))
-            click.echo("\t\t\tProject: {}".format(pctp.project_commit))
-            click.echo("\t\t\tURI: {}".format(pctp.uri))
-            click.echo("\t\t\tBranch: {}".format(pctp.branch))
-            click.echo("\t\t\tActive: {}".format(pctp.options == {'active': True}))
-
-    confs = ganarchy.config.ConfigManager.new_default()
-    click.echo("Configs: {}".format(confs.sources))
+    confs = ganarchy.data.ConfigManager.new_default()
+    click.echo("Configs (raw): {}".format(confs.sources))
     click.echo("Breaking down the configs.")
-    for conf in reversed(confs.sources):
-        click.echo("Config: {}".format(conf.filename))
-        e = conf.update()
-        if e is None:
-            print_conf(conf)
-        else:
-            click.echo("\tError: {}".format(e))
+    update_excs = confs.update()
+    for conf, exc in zip(reversed(confs.sources), reversed(update_excs)):
+        click.echo("Config: {}".format(conf))
+        if exc is not None:
+            click.echo("\tError(s): {}".format(exc))
+        if conf.exists():
+            print_data_source(conf)
+    click.echo("ConfigManager (raw):")
+    print_data_source(confs)
+    click.echo("ConfigManager (effective):")
+    print_data_source(ganarchy.data.EffectiveSource(confs))
+
+@debug.command()
+def repo_lists():
+    confs = ganarchy.data.ConfigManager.new_default()
+    repo_lists = ganarchy.data.RepoListManager(confs)
+    update_excs = repo_lists.update()
+    click.echo("Repo lists (raw): {}".format(repo_lists.sources))
+    click.echo("Breaking down the repo lists.")
+    for repo_list, exc in zip(reversed(repo_lists.sources), reversed(update_excs)):
+        click.echo("Repo list: {}".format(repo_list))
+        if exc is not None:
+            click.echo("\tError(s): {}".format(exc))
+        if repo_list.exists():
+            print_data_source(repo_list)
+    click.echo("RepoListManager (raw):")
+    print_data_source(repo_lists)
+    click.echo("RepoListManager (effective):")
+    print_data_source(ganarchy.data.EffectiveSource(repo_lists))
+

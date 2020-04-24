@@ -1,6 +1,6 @@
--e git+https://soniex2.autistic.space/git-repos/abdl.git@6f4df5d08e147f74f91bf7ce2f882dca1390c721#egg=gan0f74bd87a23b515b45da7e6f5d9cc82380443dab
+-e git+https://soniex2.autistic.space/git-repos/abdl.git@b259b179f5ceba60a1d04fef07559c0b01720c31#egg=gan0f74bd87a23b515b45da7e6f5d9cc82380443dab
 Click==7.0
-Jinja2==2.10.1
+Jinja2==2.11.1
 qtoml==0.2.4
 requests==2.22.0
 
