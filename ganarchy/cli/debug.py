@@ -33,6 +33,20 @@ def paths():
     click.echo('Data home: {}'.format(ganarchy.data_home))
 
 def print_data_source(data_source):
+    if ganarchy.data.DataProperty.INSTANCE_TITLE in data_source.get_supported_properties():
+        try:
+            title = data_source.get_property_value(ganarchy.data.DataProperty.INSTANCE_TITLE)
+        except LookupError:
+            title = None
+        click.echo("\tTitle: {}".format(title))
+
+    if ganarchy.data.DataProperty.INSTANCE_BASE_URL in data_source.get_supported_properties():
+        try:
+            base_url = data_source.get_property_value(ganarchy.data.DataProperty.INSTANCE_BASE_URL)
+        except LookupError:
+            base_url = None
+        click.echo("\tBase URL: {}".format(base_url))
+
     if ganarchy.data.DataProperty.REPO_LIST_SOURCES in data_source.get_supported_properties():
         click.echo("\tRepo list sources:")
         try:

@@ -70,7 +70,7 @@ class CommitPredicate(abdl.predicates.Predicate):
 # validate = error on invalid entries
 # LEGACY. DO NOT USE.
 CONFIG_REPOS_SANITIZE = abdl.compile("""->'projects'?:?$dict
-                                          ->commit[:?$commit]:?$dict
+                                          ->commit[:?$str:?$commit]:?$dict
                                             ->url[:?$str:?$uri]:?$dict
                                               ->branch:?$dict(->'active'?:?$bool)""",
                                      dict(bool=bool, dict=dict, str=str, uri=URIPredicate(), commit=CommitPredicate()))
@@ -82,7 +82,7 @@ CONFIG_BASE_URL_SANITIZE = abdl.compile("""->base_url'base_url'?:?$str:?$uri""",
 # they still skip "bad" entries, just like the old matchers.
 
 _MATCHER_REPOS = abdl.compile("""->'projects':$dict
-                                   ->commit[:?$commit]:?$dict
+                                   ->commit[:?$str:?$commit]:?$dict
                                      ->url[:?$str:?$uri]:?$dict
                                        ->branch:?$dict(->'active'?:?$bool)""",
                               dict(bool=bool, dict=dict, str=str, uri=URIPredicate(), commit=CommitPredicate()))
@@ -94,6 +94,12 @@ _MATCHER_REPO_LIST_SRCS = abdl.compile("""->'repo_list_srcs':$dict
 #_MATCHER_ALIASES = abdl.compile("""->'project_settings':$dict
 #                                     ->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict
 #                                       """, {'dict': dict}) # FIXME check for aliases, might require changes to abdl
+
+# TODO
+#_MATCHER_URI_FILTERS = abdl.compile("""->'uri_filters':$dict
+#                                         ->filter[:?$str]:?$dict
+#                                           (->'active'?:?$bool)""",
+#                                    dict(dict=dict, str=str, bool=bool))
 
 _MATCHER_TITLE = abdl.compile("""->title'title':$str""", dict(str=str))
 _MATCHER_BASE_URL = abdl.compile("""->base_url'base_url':$str:$uri""", dict(str=str, uri=URIPredicate()))
@@ -242,6 +248,10 @@ class DataSource(abc.ABC):
         """
         raise PropertyError
 
+class DummyDataSource(DataSource):
+    """A DataSource that provides nothing.
+    """
+
 class ObjectDataSource(DataSource):
     """A DataSource backed by a Python object.
 
@@ -292,7 +302,7 @@ class LocalDataSource(ObjectDataSource):
             updtime = self.last_updated
             self.last_updated = os.stat(self.filename).st_mtime
             if not self.file_exists or updtime != self.last_updated:
-                with open(self.filename) as f:
+                with open(self.filename, 'r', encoding='utf-8', newline='') as f:
                     self._obj = qtoml.load(f)
             self.file_exists = True
         except (OSError, UnicodeDecodeError, qtoml.decoder.TOMLDecodeError) as e:
@@ -383,7 +393,7 @@ class ConfigManager(DataSource):
     def new_default(cls):
         from ganarchy import config_home, config_dirs
         srcs = [LocalDataSource(d + "/config.toml") for d in [config_home] + config_dirs]
-        return cls(srcs)
+        return cls(srcs + [DefaultsDataSource()])
 
     def exists(self):
         return True
@@ -459,7 +469,7 @@ class RepoListManager(DataSource):
                 pass
             else:
                 self.sources.extend(RemoteDataSource(rls.uri) for rls in it if rls.active)
-        for source in self.sources:
+        for source in self.sources[1:]:
             excs.append(source.update())
         return excs
 
@@ -470,14 +480,17 @@ class RepoListManager(DataSource):
         if prop not in self.get_supported_properties():
             raise PropertyError
         assert prop == DataProperty.VCS_REPOS
-        # must raise exceptions *now*
-        # not when the generator runs
-        return self._get_vcs_repos(self.config_manager.get_property_values(DataProperty.VCS_REPOS))
+        return self._get_vcs_repos()
 
-    def _get_vcs_repos(self, it):
+    def _get_vcs_repos(self):
         assert self.config_manager == self.sources[0]
-        # config manager may override repo lists
-        yield from it
+        try:
+            # config manager may override repo lists
+            iterator = self.config_manager.get_property_values(DataProperty.VCS_REPOS)
+        except (PropertyError, LookupError):
+            pass
+        else:
+            yield from iterator
         for source in self.sources:
             if DataProperty.VCS_REPOS in source.get_supported_properties():
                 try:

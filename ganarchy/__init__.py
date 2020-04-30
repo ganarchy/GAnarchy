@@ -33,6 +33,7 @@ from collections import defaultdict
 from urllib.parse import urlparse
 
 import ganarchy as m_ganarchy
+from ganarchy import data as m_data
 
 MIGRATIONS = {
         "toml-config": (
