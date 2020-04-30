@@ -33,7 +33,6 @@ from collections import defaultdict
 from urllib.parse import urlparse
 
 import ganarchy as m_ganarchy
-from ganarchy import data as m_data
 
 MIGRATIONS = {
         "toml-config": (
@@ -437,27 +436,6 @@ class GAnarchy:
             self.projects = projects
         else:
             self.projects = None
-
-@ganarchy.command()
-@click.option('--skip-errors/--no-skip-errors', default=False)
-@click.argument('files', type=click.File('r', encoding='utf-8'), nargs=-1)
-def merge_configs(skip_errors, files):
-    """Merges config files."""
-    config = None
-    for f in files:
-        try:
-            f.reconfigure(newline='')
-            config = Config(f, config, remove=False)
-        except (UnicodeDecodeError, qtoml.decoder.TOMLDecodeError):
-            if not skip_errors:
-                raise
-    if config:
-        env = get_env()
-        template = env.get_template('index.toml')
-        click.echo(template.render(config=config))
-
-def update_remote_configs():
-    pass
 
 @ganarchy.command()
 @click.argument('out', required=True)

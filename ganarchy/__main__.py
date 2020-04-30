@@ -22,5 +22,6 @@ import ganarchy
 
 # Additional CLI commands
 import ganarchy.cli.debug
+import ganarchy.cli.merge_configs
 
 ganarchy.cli.main(prog_name='ganarchy')
