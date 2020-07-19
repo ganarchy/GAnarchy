@@ -1,5 +1,5 @@
-# GAnarchy - decentralized project hub
-# Copyright (C) 2019, 2020  Soni L.
+# This file is part of GAnarchy - decentralized project hub
+# Copyright (C) 2020  Soni L.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -14,15 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# The base CLI
-import ganarchy.cli
+"""Templates.
 
-# FIXME this shouldn't be here
-import ganarchy
+"""
 
-# Additional CLI commands
-import ganarchy.cli.db
-import ganarchy.cli.debug
-import ganarchy.cli.merge_configs
-
-ganarchy.cli.main(prog_name='ganarchy')
+# TODO write me

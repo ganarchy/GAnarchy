@@ -1,5 +1,5 @@
 # This file is part of GAnarchy - decentralized project hub
-# Copyright (C) 2019  Soni L.
+# Copyright (C) 2019, 2020  Soni L.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -34,6 +34,8 @@ import requests
 
 from enum import Enum
 from urllib.parse import urlparse
+
+import ganarchy.dirs
 
 # TODO move elsewhere
 class URIPredicate(abdl.predicates.Predicate):
@@ -391,8 +393,7 @@ class ConfigManager(DataSource):
 
     @classmethod
     def new_default(cls):
-        from ganarchy import config_home, config_dirs
-        srcs = [LocalDataSource(d + "/config.toml") for d in [config_home] + config_dirs]
+        srcs = [LocalDataSource(d + "/config.toml") for d in [ganarchy.dirs.CONFIG_HOME] + ganarchy.dirs.CONFIG_DIRS]
         return cls(srcs + [DefaultsDataSource()])
 
     def exists(self):
