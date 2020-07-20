@@ -14,24 +14,3 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#import abc
-#import builtins
-#import hashlib
-#import hmac
-#import os
-#import re
-#import sqlite3
-#import subprocess
-#
-#import click
-#import jinja2
-#import qtoml
-#import requests
-#
-#from collections import defaultdict
-#from urllib.parse import urlparse
-#
-#import ganarchy as m_ganarchy
-#import ganarchy.dirs
-#import ganarchy.git
-

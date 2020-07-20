@@ -34,6 +34,14 @@ class Git:
         self.path = path
         self.base = ("git", "-C", path)
 
+    def create(self):
+        """Creates the local repo.
+
+        Can safely be called on an existing repo.
+        """
+        subprocess.call(self.base + ("init", "-q"))
+
+
     def check_history(self, local_head, commit):
         """Checks if the local head contains commit in its history.
         Raises if it doesn't.
@@ -69,7 +77,7 @@ class Git:
         """
         try:
             subprocess.check_output(
-                base + ("fetch", "-q", url, "+" + remote_head + ":" + local_head),
+                self.base + ("fetch", "-q", url, "+" + remote_head + ":" + local_head),
                 stderr=subprocess.STDOUT
             )
         except subprocess.CalledProcessError as e:
@@ -89,7 +97,7 @@ class Git:
         """
         try:
             res = subprocess.check_output(
-                base + ("rev-list", "--count", first_hash + ".." + last_hash, "--"),
+                self.base + ("rev-list", "--count", first_hash + ".." + last_hash, "--"),
                 stderr=subprocess.DEVNULL
             ).decode("utf-8").strip()
             return int(res)

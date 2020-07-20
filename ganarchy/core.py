@@ -14,8 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import re
+from urllib import parse
+
 import ganarchy.git
 import ganarchy.dirs
+import ganarchy.data
 
 # Currently we only use one git repo, at CACHE_HOME
 # TODO optimize
@@ -90,6 +94,8 @@ class Repo:
             return None
 
 class Project:
+    # FIXME add docs
+
     def __init__(self, dbconn, project_commit, list_repos=False):
         self.commit = project_commit
         self.refresh_metadata()
@@ -117,10 +123,12 @@ class Project:
                 project_title, project_desc = ("Error parsing project commit",)*2
             # if project_desc: # FIXME
             #     project_desc = project_desc.strip()
+            self.exists = True
             self.commit_body = project
             self.title = project_title
             self.description = project_desc
         except ganarchy.git.GitError:
+            self.exists = False
             self.commit_body = None
             self.title = None
             self.description = None
@@ -132,34 +140,33 @@ class Project:
         return results
 
 class GAnarchy:
-    def __init__(self, dbconn, config, list_projects=False, list_repos=False):
-        base_url = config.base_url
-        title = config.title
-        if not base_url:
+    # FIXME add docs
+
+    def __init__(self, dbconn, config):
+        try:
+            base_url = config.get_property_value(
+                ganarchy.data.DataProperty.INSTANCE_BASE_URL
+            )
+        except LookupError:
             # FIXME use a more appropriate error type
             raise ValueError
-        if not title:
-            title = "GAnarchy on " + urlparse(base_url).hostname
+
+        try:
+            title = config.get_property_value(
+                ganarchy.data.DataProperty.INSTANCE_TITLE
+            )
+        except LookupError:
+            title = "GAnarchy on " + parse.urlparse(base_url).hostname
+
         self.title = title
         self.base_url = base_url
-        # load config onto DB
-        c = dbconn.cursor()
-        c.execute('''CREATE TEMPORARY TABLE "repos" ("url" TEXT PRIMARY KEY, "active" INT, "branch" TEXT, "project" TEXT)''')
-        c.execute('''CREATE UNIQUE INDEX "temp"."repos_url_branch_project" ON "repos" ("url", "branch", "project")''')
-        c.execute('''CREATE INDEX "temp"."repos_project" ON "repos" ("project")''')
-        c.execute('''CREATE INDEX "temp"."repos_active" ON "repos" ("active")''')
-        for (project_commit, repos) in config.projects.items():
-            for (repo_url, branches) in repos.items():
-                for (branchname, options) in branches.items():
-                    if options['active']: # no need to insert inactive repos since they get ignored anyway
-                        c.execute('''INSERT INTO "repos" VALUES (?, ?, ?, ?)''', (repo_url, 1, branchname, project_commit))
-        dbconn.commit()
-        if list_projects:
-            projects = []
-            with dbconn:
-                for (project,) in dbconn.execute('''SELECT DISTINCT "project" FROM "repos" '''):
-                    projects.append(Project(dbconn, project, list_repos=list_repos))
-            projects.sort(key=lambda project: project.title) # sort projects by title
-            self.projects = projects
-        else:
-            self.projects = None
+        self.projects = None
+        self.dbconn = dbconn
+
+    def load_projects(self, list_repos=False):
+        # FIXME add docs, get rid of list_repos
+        projects = []
+        for project in self.dbconn.list_projects():
+            projects.append(Project(self.dbconn, project, list_repos=list_repos))
+        projects.sort(key=lambda p: p.title or "") # sort projects by title
+        self.projects = projects

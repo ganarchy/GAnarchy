@@ -332,5 +332,5 @@ def connect_database(effective_config):
         for the config.
     """
     del effective_config  # currently unused, intended for the future
-    conn = sqlite3.connect(ganarchy.dirs.data_home + "/ganarchy.db")
+    conn = sqlite3.connect(ganarchy.dirs.DATA_HOME + "/ganarchy.db")
     return Database(conn)

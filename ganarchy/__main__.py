@@ -24,5 +24,6 @@ import ganarchy
 import ganarchy.cli.db
 import ganarchy.cli.debug
 import ganarchy.cli.merge_configs
+import ganarchy.cli.run_targets
 
 ganarchy.cli.main(prog_name='ganarchy')

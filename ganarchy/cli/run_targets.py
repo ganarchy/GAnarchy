@@ -17,9 +17,15 @@
 """This module contains the CLI Run Targets.
 """
 
+import os
+
 import click
 
 from ganarchy import cli
+from ganarchy import core
+from ganarchy import data
+from ganarchy import db
+from ganarchy import dirs
 from ganarchy.templating import environment
 
 #@cli.main.command()
@@ -35,7 +41,7 @@ from ganarchy.templating import environment
 #        - post_update_cycle_hook - executed after all objects in an update cycle are updated."""
 #    pass
 
-@ganarchy.command()
+@cli.main.command()
 @click.option('--update/--no-update', default=True)
 @click.argument('project', required=False)
 def cron_target(update, project):
@@ -44,41 +50,52 @@ def cron_target(update, project):
     "Deprecated". Useful if you want full control over how GAnarchy
     generates the pages.
     """
-    #conf = None
-    ## reverse order is intentional
-    #for d in reversed(config_dirs):
-    #    try:
-    #        conf = Config(open(d + "/config.toml", 'r', encoding='utf-8', newline=''), conf)
-    #    except (OSError, UnicodeDecodeError, qtoml.decoder.TOMLDecodeError):
-    #        pass
-    #with open(config_home + "/config.toml", 'r', encoding='utf-8', newline='') as f:
-    #    conf = Config(f, conf)
-    env = get_env()
+    # create config objects
+    conf = data.ConfigManager.new_default()
+    effective_conf = data.EffectiveSource(conf)
+    repos = data.RepoListManager(effective_conf)
+    effective_repos = data.EffectiveSource(repos)
+
+    # load config and repo data
+    effective_repos.update()
+    database = db.connect_database(effective_conf)
+    database.load_repos(effective_repos)
+
+    # load template environment
+    env = environment.get_env()
+
+    # handle config and project list
     if project == "config":
         # render the config
-        # doesn't have access to a GAnarchy object. this is deliberate.
         template = env.get_template('index.toml')
-        click.echo(template.render(config = conf))
+        click.echo(template.render(database=database))
         return
     if project == "project-list":
         # could be done with a template but eh w/e, this is probably better
-        for project in conf.projects.keys():
+        for project in database.list_projects():
             click.echo(project)
         return
+
     # make sure the cache dir exists
-    os.makedirs(cache_home, exist_ok=True)
+    os.makedirs(dirs.CACHE_HOME, exist_ok=True)
+
     # make sure it is a git repo
-    subprocess.call(["git", "-C", cache_home, "init", "-q"])
-    conn = sqlite3.connect(data_home + "/ganarchy.db")
-    instance = GAnarchy(conn, conf, list_projects=project in ["index", "config"])
-    if project == "index":
-        # render the index
-        template = env.get_template('index.html')
-        click.echo(template.render(ganarchy = instance))
-        return
+    core.GIT.create()
+
+    instance = core.GAnarchy(database, effective_conf)
+
     if not instance.base_url or not project:
         click.echo("No base URL or project commit specified", err=True)
         return
+
+    if project == "index":
+        instance.load_projects()
+        # render the index
+        template = env.get_template('index.html')
+        click.echo(template.render(ganarchy=instance))
+        return
+
+    # FIXME this should be in core, as it belongs to core logic!
     entries = []
     generate_html = []
     c = conn.cursor()
