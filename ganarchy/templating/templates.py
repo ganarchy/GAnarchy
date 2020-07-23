@@ -70,11 +70,12 @@ def get_template_loader():
 {%- for project in database.list_projects() %}
 [projects.{{project}}]
 {%- for repo_url, branch, _head_commit in database.list_repobranches(project) %}
-"{{repo_url|tomle}}".{% if branch == "HEAD" %}HEAD{% else %}"{{branch|tomle}}"{% endif %} = { active=true }
+"{{repo_url|tomle}}".{% if not branch %}HEAD{% else %}"{{branch|tomle}}"{% endif %} = { active=true }
 {%- endfor %}
 {% endfor -%}
 """,
-            ## project.html FIXME
+            ## project.html
+            # FIXME convert to project.title/etc instead of project_title/etc.
             'project.html': """<!DOCTYPE html>
 <html lang="en">
     <head>

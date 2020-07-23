@@ -160,7 +160,7 @@ class Database:
         c = self.conn.cursor()
         c.execute('''
             CREATE TEMPORARY TABLE "repos" (
-                "url" TEXT PRIMARY KEY,
+                "url" TEXT,
                 "active" INT,
                 "branch" TEXT,
                 "project" TEXT
@@ -222,7 +222,7 @@ class Database:
             ''',
             activities
         )
-        conn.commit()
+        self.conn.commit()
         c.close()
 
     def list_projects(self):
@@ -282,7 +282,7 @@ class Database:
                         FROM "repos" "T3"
                         WHERE "active" AND "project" IS ?1
                     )
-                    GROUP BY "url"
+                    GROUP BY "url", "branch"
                     ORDER BY "e"
                 ''',
                 (project_commit,)
@@ -313,7 +313,7 @@ class Database:
                     AND "project" IS ?
                 ORDER BY "entry" ASC
             ''',
-            (url, branch, project)
+            (uri, branch, project_commit)
         ).fetchall()
         history = [x for [x] in history]
         c.close()

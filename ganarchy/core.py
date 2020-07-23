@@ -14,6 +14,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Core logic of GAnarchy.
+"""
+
+import hashlib
+import hmac
 import re
 from urllib import parse
 
@@ -26,11 +31,34 @@ import ganarchy.data
 GIT = ganarchy.git.Git(ganarchy.dirs.CACHE_HOME)
 
 class Repo:
-    def __init__(self, dbconn, project_commit, url, branch, head_commit, list_metadata=False):
+    """A GAnarchy repo.
+
+    Args:
+        dbconn (ganarchy.db.Database): The database connection.
+        project_commit (str): The project commit.
+        url (str): The git URL.
+        branch (str): The branch.
+        head_commit (str): The last known head commit.
+
+    Attributes:
+        branch (str or None): The remote git branch.
+        branchname (str): The local git branch.
+    """
+    # TODO fill in Attributes.
+
+    def __init__(self, dbconn, project_commit, url, branch, head_commit):
         self.url = url
         self.branch = branch
         self.project_commit = project_commit
+        self.errormsg = None
         self.erroring = False
+        self.message = None
+        self.hash = None
+        self.branchname = None
+        self.head = None
+
+        if not self._check_branch():
+            return
 
         if not branch:
             self.branchname = "gan" + hashlib.sha256(url.encode("utf-8")).hexdigest()
@@ -46,30 +74,59 @@ class Repo:
                 self.hash = GIT.get_hash(self.branchname)
             except ganarchy.git.GitError:
                 self.erroring = True
-                self.hash = None
 
-        self.message = None
-        if list_metadata:
-            try:
-                self.update_metadata()
-            except ganarchy.git.GitError:
-                self.erroring = True
-                pass
+        self.refresh_metadata()
 
-    def update_metadata(self):
-        self.message = GIT.get_commit_message(self.branchname)
+    def _check_branch(self):
+        """Checks if ``self.branch`` is a valid git branch name, or None. Sets
+        ``self.errormsg`` and ``self.erroring`` accordingly.
 
-    def update(self, updating=True):
-        """Updates the git repo, returning new metadata.
+        Returns:
+            bool: True if valid, False otherwise.
         """
-        if updating:
+        if not self.branch:
+            return True
+        try:
+            GIT.check_branchname(self.branch)
+            return True
+        except ganarchy.git.GitError as e:
+            self.erroring = True
+            self.errormsg = e
+            return False
+
+    def refresh_metadata(self):
+        """Refreshes repo metadata.
+        """
+        if not self._check_branch():
+            return
+        try:
+            self.message = GIT.get_commit_message(self.branchname)
+        except ganarchy.git.GitError as e:
+            self.erroring = True
+            self.errormsg = e
+
+    # FIXME maybe this shouldn't be "public"?
+    # reasoning: this update() isn't reflected in the db.
+    # but this might be handy for dry runs.
+    # alternatively: change the return to be the new head commit,
+    # and update things accordingly.
+    def update(self, *, dry_run=False):
+        """Updates the git repo, returning a commit count.
+
+        Args:
+            dry_run (bool): To simulate an update without doing anything.
+                In particular, without fetching commits.
+        """
+        if not self._check_branch():
+            return None
+        if not dry_run:
             try:
                 GIT.force_fetch(self.url, self.head, self.branchname)
             except ganarchy.git.GitError as e:
                 # This may error for various reasons, but some
                 # are important: dead links, etc
-                click.echo(e.output, err=True)
                 self.erroring = True
+                self.errormsg = e
                 return None
         pre_hash = self.hash
         try:
@@ -78,44 +135,59 @@ class Repo:
             # This should never happen, but maybe there's some edge cases?
             # TODO check
             self.erroring = True
+            self.errormsg = e
             return None
         self.hash = post_hash
         if not pre_hash:
             pre_hash = post_hash
         count = GIT.get_count(pre_hash, post_hash)
         try:
-            if updating:
-                GIT.check_history(self.branchname, self.project_commit)
-            self.update_metadata()
+            GIT.check_history(self.branchname, self.project_commit)
+            self.refresh_metadata()
             return count
         except ganarchy.git.GitError as e:
-            click.echo(e, err=True)
             self.erroring = True
+            self.errormsg = e
             return None
 
 class Project:
-    # FIXME add docs
+    """A GAnarchy project.
 
-    def __init__(self, dbconn, project_commit, list_repos=False):
+    Args:
+        dbconn (ganarchy.db.Database): The database connection.
+        project_commit (str): The project commit.
+
+    Attributes:
+        commit (str): The project commit.
+        repos (list, optional): Repos associated with this project.
+        title (str, optional): Title of the project.
+        description (str, optional): Description of the project.
+        commit_body (str, optional): Raw commit message for title and
+            description.
+        exists (bool): Whether the project exists in our git cache.
+    """
+
+    def __init__(self, dbconn, project_commit):
         self.commit = project_commit
         self.refresh_metadata()
         self.repos = None
-        if list_repos:
-            self.list_repos(dbconn)
+        self._dbconn = dbconn
 
-    def list_repos(self, dbconn):
+    def load_repos(self):
+        """Loads the repos into this project.
+
+        If repos have already been loaded, re-loads them.
+        """
         repos = []
-        with dbconn:
-            for (e, url, branch, head_commit) in dbconn.execute('''SELECT "max"("e"), "url", "branch", "head_commit" FROM (SELECT "max"("T1"."entry") "e", "T1"."url", "T1"."branch", "T1"."head_commit" FROM "repo_history" "T1"
-                                                                WHERE (SELECT "active" FROM "repos" "T2" WHERE "url" = "T1"."url" AND "branch" IS "T1"."branch" AND "project" IS ?1)
-                                                                GROUP BY "T1"."url", "T1"."branch"
-                                                                UNION
-                                                                SELECT null, "T3"."url", "T3"."branch", null FROM "repos" "T3" WHERE "active" AND "project" IS ?1)
-                                       GROUP BY "url" ORDER BY "e"''', (self.commit,)):
-                repos.append(Repo(dbconn, self.commit, url, branch, head_commit))
+        for url, branch, head_commit in self._dbconn.list_repobranches(self.commit):
+            repos.append(
+                Repo(self._dbconn, self.commit, url, branch, head_commit)
+            )
         self.repos = repos
 
     def refresh_metadata(self):
+        """Refreshes project metadata.
+        """
         try:
             project = GIT.get_commit_message(self.commit)
             project_title, project_desc = (lambda x: x.groups() if x is not None else ('', None))(re.fullmatch('^\\[Project\\]\s+(.+?)(?:\n\n(.+))?$', project, flags=re.ASCII|re.DOTALL|re.IGNORECASE))
@@ -133,14 +205,43 @@ class Project:
             self.title = None
             self.description = None
 
-    def update(self, updating=True):
+    def update(self, *, dry_run=False):
+        """Updates the project and its repos.
+        """
         # TODO? check if working correctly
-        results = [(repo, repo.update(updating)) for repo in self.repos]
+        results = []
+        if self.repos is not None:
+            for repo in self.repos:
+                results.append((repo, repo.update(dry_run=dry_run)))
         self.refresh_metadata()
+        if self.repos is not None:
+            results.sort(key=lambda x: x[1] or -1, reverse=True)
+            if not dry_run:
+                entries = []
+                for (repo, count) in results:
+                    if count is not None:
+                        entries.append((
+                            self.commit,
+                            repo.url,
+                            repo.branch,
+                            repo.hash,
+                            count
+                        ))
+                self._dbconn.insert_activities(entries)
         return results
 
 class GAnarchy:
-    # FIXME add docs
+    """A GAnarchy instance.
+
+    Args:
+        dbconn (ganarchy.db.Database): The database connection.
+        config (ganarchy.data.DataSource): The (effective) config.
+
+    Attributes:
+        base_url (str): Instance base URL.
+        title (str): Instance title.
+        projects (list, optional): Projects associated with this instance.
+    """
 
     def __init__(self, dbconn, config):
         try:
@@ -161,12 +262,15 @@ class GAnarchy:
         self.title = title
         self.base_url = base_url
         self.projects = None
-        self.dbconn = dbconn
+        self._dbconn = dbconn
 
-    def load_projects(self, list_repos=False):
-        # FIXME add docs, get rid of list_repos
+    def load_projects(self):
+        """Loads the projects into this GAnarchy instance.
+
+        If projects have already been loaded, re-loads them.
+        """
         projects = []
-        for project in self.dbconn.list_projects():
-            projects.append(Project(self.dbconn, project, list_repos=list_repos))
+        for project in self._dbconn.list_projects():
+            projects.append(Project(self._dbconn, project))
         projects.sort(key=lambda p: p.title or "") # sort projects by title
         self.projects = projects

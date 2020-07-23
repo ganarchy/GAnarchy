@@ -42,9 +42,9 @@ from ganarchy.templating import environment
 #    pass
 
 @cli.main.command()
-@click.option('--update/--no-update', default=True)
+@click.option('--dry-run/--no-dry-run', '--no-update/--update', default=False)
 @click.argument('project', required=False)
-def cron_target(update, project):
+def cron_target(dry_run, project):
     """Runs ganarchy as a cron target.
 
     "Deprecated". Useful if you want full control over how GAnarchy
@@ -95,27 +95,26 @@ def cron_target(update, project):
         click.echo(template.render(ganarchy=instance))
         return
 
-    # FIXME this should be in core, as it belongs to core logic!
-    entries = []
+    p = core.Project(database, project)
+    p.load_repos()
+
     generate_html = []
-    c = conn.cursor()
-    p = Project(conn, project, list_repos=True)
-    results = p.update(update)
+    results = p.update(dry_run=dry_run)
+    #if not p.exists:
+    #    ...
     for (repo, count) in results:
         if count is not None:
-            entries.append((repo.url, count, repo.hash, repo.branch, project))
             generate_html.append((repo.url, repo.message, count, repo.branch))
-    # sort stuff twice because reasons
-    entries.sort(key=lambda x: x[1], reverse=True)
-    generate_html.sort(key=lambda x: x[2], reverse=True)
-    if update:
-        c.executemany('''INSERT INTO "repo_history" ("url", "count", "head_commit", "branch", "project") VALUES (?, ?, ?, ?, ?)''', entries)
-        conn.commit()
+        else:
+            click.echo(repo.errormsg, err=True)
     html_entries = []
     for (url, msg, count, branch) in generate_html:
-        history = c.execute('''SELECT "count" FROM "repo_history" WHERE "url" = ? AND "branch" IS ? AND "project" IS ? ORDER BY "entry" ASC''', (url, branch, project)).fetchall()
+        history = database.list_repobranch_activity(project, url, branch)
         # TODO process history into SVG
+        # TODO move this into a separate system
+        # (e.g. ``if project.startswith("svg-"):``)
         html_entries.append((url, msg, "", branch))
+
     template = env.get_template('project.html')
     click.echo(template.render(project_title  = p.title,
                                project_desc   = p.description,

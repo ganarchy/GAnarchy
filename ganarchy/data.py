@@ -134,14 +134,17 @@ class PCTP(OverridableProperty):
     Attributes:
         project_commit (str): The project commit.
         uri (str): The URI of a fork of the project.
-        branch (str): The branch name, or "HEAD" for the default branch.
+        branch (str): The branch name, or None for the default branch.
         options (dict): A dict of fork-specific options.
     """
 
     def __init__(self, project_commit, uri, branch, options):
         self.project_commit = project_commit
         self.uri = uri
-        self.branch = branch
+        if branch == "HEAD":
+            self.branch = None
+        else:
+            self.branch = branch or None
         self.options = options
 
     def as_key(self):
@@ -549,51 +552,3 @@ class EffectiveSource(DataSource):
 
     def __repr__(self):
         return "EffectiveSource({!r})".format(self.raw_source)
-
-# class Config:
-#     def __init__(self, toml_file, base=None, remove=True):
-#         self.projects = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict))))
-#         config_data = qtoml.load(toml_file)
-#         self.remote_configs = config_data.get('config_srcs', [])
-#         self.title = config_data.get('title', '')
-#         self.base_url = config_data.get('base_url', '')
-#         # TODO blocked domains (but only read them from config_data if remove is True)
-#         self.blocked_domains = []
-#         self.blocked_domain_suffixes = []
-#         self.blocked_domains.sort()
-#         self.blocked_domain_suffixes.sort(key=lambda x: x[::-1])
-#         # FIXME remove duplicates and process invalid entries
-#         self.blocked_domains = tuple(self.blocked_domains)
-#         self.blocked_domain_suffixes = tuple(self.blocked_domain_suffixes) # MUST be tuple
-#         # TODO re.compile("(^" + "|^".join(map(re.escape, domains)) + "|" + "|".join(map(re.escape, suffixes) + ")$")
-#         if base:
-#             # FIXME is remove=remove the right thing to do?
-#             self._update_projects(base.projects, remove=remove, sanitize=False) # already sanitized
-#         projects = config_data.get('projects', {})
-#         self._update_projects(projects, remove=remove)
-# 
-#     def _update_projects(self, projects, remove, sanitize=True):
-#         m = (m_ganarchy_config.CONFIG_PATTERN_SANITIZE if sanitize else m_ganarchy_config.CONFIG_PATTERN).match(projects)
-#         for v in m:
-#             commit, repo_url, branchname, options = v['commit'][0], v['url'][0], v['branch'][0], v['branch'][1]
-#             try:
-#                 u = urlparse(repo_url)
-#                 if not u:
-#                     raise ValueError
-#                 # also raises for invalid ports, see https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlparse
-#                 # "Reading the port attribute will raise a ValueError if an invalid port is specified in the URL. [...]"
-#                 if u.port == 0:
-#                     raise ValueError
-#                 if u.scheme not in ('http', 'https'):
-#                     raise ValueError
-#                 if (u.hostname in self.blocked_domains) or (u.hostname.endswith(self.blocked_domain_suffixes)):
-#                     raise ValueError
-#             except ValueError:
-#                 continue
-#             if branchname == "HEAD":
-#                 branchname = None
-#             active = options.get('active', None)
-#             if active not in (True, False):
-#                 continue
-#             branch = self.projects[commit][repo_url][branchname]
-#             branch['active'] = active or (branch.get('active', False) and not remove)
