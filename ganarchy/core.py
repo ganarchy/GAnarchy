@@ -244,8 +244,20 @@ class GAnarchy:
     """
 
     def __init__(self, dbconn, config):
+        self.title = None
+        self.base_url = None
+        self.projects = None
+        self._dbconn = dbconn
+        self._config = config
+        self.load_metadata()
+
+    def load_metadata(self):
+        """Loads instance metadata from config.
+
+        If instance metadata has already been loaded, re-loads it.
+        """
         try:
-            base_url = config.get_property_value(
+            base_url = self._config.get_property_value(
                 ganarchy.data.DataProperty.INSTANCE_BASE_URL
             )
         except LookupError:
@@ -253,7 +265,7 @@ class GAnarchy:
             raise ValueError
 
         try:
-            title = config.get_property_value(
+            title = self._config.get_property_value(
                 ganarchy.data.DataProperty.INSTANCE_TITLE
             )
         except LookupError:
@@ -261,8 +273,6 @@ class GAnarchy:
 
         self.title = title
         self.base_url = base_url
-        self.projects = None
-        self._dbconn = dbconn
 
     def load_projects(self):
         """Loads the projects into this GAnarchy instance.

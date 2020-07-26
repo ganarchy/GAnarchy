@@ -22,7 +22,9 @@ import ganarchy.templating.toml
 def get_env():
     env = jinja2.Environment(
         loader=ganarchy.templating.templates.get_template_loader(),
-        autoescape=False
+        autoescape=False,
+        # aka please_stop_mangling_my_templates=True
+        keep_trailing_newline=True
     )
     env.filters['tomlescape'] = ganarchy.templating.toml.tomlescape
     env.filters['tomle'] = env.filters['tomlescape']
