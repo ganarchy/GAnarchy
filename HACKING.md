@@ -4,6 +4,9 @@ Hacking GAnarchy
 Project Structure
 -----------------
 
+Dependencies
+------------
+
 `requirements.txt` lists known-good, frozen dependencies. if needed or
 desired, install dependencies listed in setup.py directly.
 
