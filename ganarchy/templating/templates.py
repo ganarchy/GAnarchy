@@ -70,7 +70,9 @@ def get_template_loader():
 {%- for project in database.list_projects() %}
 [projects.{{project}}]
 {%- for repo_url, branch, _head_commit in database.list_repobranches(project) %}
+{%- if database.should_repo_federate(project, repo_url, branch) %}
 "{{repo_url|tomle}}".{% if not branch %}HEAD{% else %}"{{branch|tomle}}"{% endif %} = { active=true }
+{%- endif %}
 {%- endfor %}
 {% endfor -%}
 """,

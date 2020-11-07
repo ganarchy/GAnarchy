@@ -163,7 +163,8 @@ class Database:
                 "url" TEXT,
                 "active" INT,
                 "branch" TEXT,
-                "project" TEXT
+                "project" TEXT,
+                "federate" INT
             )
         ''')
         c.execute('''
@@ -183,8 +184,8 @@ class Database:
         ):
             if repo.active:
                 c.execute(
-                    '''INSERT INTO "repos" VALUES (?, ?, ?, ?)''',
-                    (repo.uri, 1, repo.branch, repo.project_commit)
+                    '''INSERT INTO "repos" VALUES (?, ?, ?, ?, ?)''',
+                    (repo.uri, 1, repo.branch, repo.project_commit, int(repo.federate))
                 )
         self.conn.commit()
         c.close()
@@ -318,6 +319,38 @@ class Database:
         history = [x for [x] in history]
         c.close()
         return history
+
+    def should_repo_federate(self, project_commit, uri, branch):
+        """Returns whether a repo should federate.
+
+        Args:
+            project_commit: The project commit.
+            uri: The repo uri.
+            branch: The branch.
+
+        Returns:
+            bool, optional: Whether the repo should federate, or None if it
+            doesn't exist.
+        """
+        c = self.conn.cursor()
+        federate = c.execute(
+            '''
+                SELECT "federate"
+                FROM "repos"
+                WHERE
+                    "url" = ?
+                    AND "branch" IS ?
+                    AND "project" IS ?
+            ''',
+            (uri, branch, project_commit)
+        ).fetchall()
+        try:
+            ((federate,),) = federate
+            federate = bool(federate)
+        except ValueError:
+            federate = None
+        c.close()
+        return federate
 
     def close(self):
         """Closes the database.

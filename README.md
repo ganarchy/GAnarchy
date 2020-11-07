@@ -18,7 +18,7 @@ is stored in the XDG data home, as per the XDG Base Directory specification.
 Then create or edit the file `$XDG_CONFIG_HOME/ganarchy/config.toml`. It
 can contain the following items, some of which are required:
 
-```
+```toml
 # Example GAnarchy config
 
 # The base_url is the web address of the GAnarchy instance.
@@ -34,24 +34,27 @@ title = "GAnarchy on autistic.space"
 # used.
 [repo_list_srcs]
 # Each repo list src is an URL that points to the repo list.
-# Restrictions: active MUST be present. MUST be https.
+# Restrictions: active MUST be present. MUST be https or file.
 "https://ganarchy.autistic.space/index.toml" = { active=true }
 # active=false won't be processed.
-"https://ganarchy.github.io/index.toml" = { active=true }
+"https://ganarchy.github.io/index.toml" = { active=false }
 
 # The projects table is made up of "project commit" hashes (see below for
 # what a project commit is)
 [projects.385e734a52e13949a7a5c71827f6de920dbfea43]
 # Each project is made up of repos and branches
 # HEAD is special and refers to the default branch
-# Restrictions: active MUST be present, file URLs are disallowed.
+# Restrictions: active MUST be present. MUST be https.
 "https://cybre.tech/SoniEx2/ganarchy".HEAD = { active=true }
 # repos/branches with active=false will not be shown or updated.
 "https://cybre.tech/SoniEx2/ganarchy".broken = { active=false }
+# federate=false won't be shared with other instances, but will be shown and
+# updated. (handy if you don't fully trust a repo yet.)
+"https://soniex2.autistic.space/git-repos/ganarchy.git"."feature/new-config" = { active=true, federate=false }
 ```
 
-A project commit is a commit that *must* start with `[Project]` followed by the
-project name, and may have an optional description.
+A project commit is a commit whose message MUST start with `[Project]`
+followed by the project name, and may have an optional description.
 
 Example project commit:
 
