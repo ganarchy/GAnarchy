@@ -54,7 +54,7 @@ def get_template_loader():
         <p>This is {{ ganarchy.title|e }}. Currently tracking the following projects:</p>
         <ul>
         {% for project in ganarchy.projects -%}{% if project.exists -%}
-            <li><a href="/project/{{ project.commit|e }}">{{ project.title|e }}</a>: {{ project.description|e }}</li>
+            <li><a href="{{ (ganarchy.base_url[:-1] + ganarchy.base_url[-1:].rsplit('/',1)[0])|e }}/project/{{ project.commit|e }}">{{ project.title|e }}</a>: {{ project.description|e }}</li>
         {% endif -%}{% endfor -%}
         </ul>
         <p>Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.</p>
@@ -114,7 +114,7 @@ def get_template_loader():
         </ul>
         <p>Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.</p>
         <p>
-            <a href="/">Main page</a>.
+            <a href="{{ base_url|e }}">Main page</a>.
             <a href="{{ base_url|e }}" onclick="event.preventDefault(); navigator.registerProtocolHandler('web+ganarchy', this.href + '?url=%s', 'GAnarchy');">Register web+ganarchy: URI handler</a>.
         </p>
     </body>
