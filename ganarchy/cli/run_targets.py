@@ -100,6 +100,8 @@ def run_once(out, keep_stale_projects):
                         (repo.url, repo.message, count, repo.branch)
                     )
                 else:
+                    click.echo(repo.url, err=True)
+                    click.echo(repo.branch, err=True)
                     click.echo(repo.errormsg, err=True)
             html_entries = []
             for (url, msg, count, branch) in generate_html:
