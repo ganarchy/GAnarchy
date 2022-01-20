@@ -141,7 +141,7 @@ def run_once(out, n_threads, keep_stale_projects):
     with core.GIT.with_work_repos(n_threads) as work_repos:
         threads = []
         for i, work_repo in enumerate(work_repos):
-            t = threading.Thread(target=lambda: run_thread(i, work_repo), name="ganarchy-fetch-{}".format(i))
+            t = threading.Thread(target=lambda i=i, work_repo=work_repo: run_thread(i, work_repo), name="ganarchy-fetch-{}".format(i))
             t.start()
             threads.append(t)
         for t in threads:
