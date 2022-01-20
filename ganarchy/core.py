@@ -19,6 +19,7 @@
 
 import hashlib
 import hmac
+from pathlib import Path
 import re
 from urllib import parse
 
@@ -26,9 +27,7 @@ import ganarchy.git
 import ganarchy.dirs
 import ganarchy.data
 
-# Currently we only use one git repo, at CACHE_HOME
-# TODO optimize
-GIT = ganarchy.git.Git(ganarchy.dirs.CACHE_HOME)
+GIT = ganarchy.git.GitCache(Path(ganarchy.dirs.CACHE_HOME)/'ganarchy-cache.git')
 
 class Repo:
     """A GAnarchy repo.
@@ -119,28 +118,30 @@ class Repo:
         """
         if not self._check_branch():
             return None
-        if not dry_run:
+        with GIT.with_work_repos(1) as work_repos: # FIXME
+            work_repo = work_repos[0]
+            if not dry_run:
+                try:
+                    work_repo.force_fetch(self.url, self.head, self.branchname)
+                except ganarchy.git.GitError as e:
+                    # This may error for various reasons, but some
+                    # are important: dead links, etc
+                    self.erroring = True
+                    self.errormsg = e
+                    return None
+            pre_hash = self.hash
             try:
-                GIT.force_fetch(self.url, self.head, self.branchname)
+                post_hash = work_repo.get_hash(self.branchname)
             except ganarchy.git.GitError as e:
-                # This may error for various reasons, but some
-                # are important: dead links, etc
+                # This should never happen, but maybe there's some edge cases?
+                # TODO check
                 self.erroring = True
                 self.errormsg = e
                 return None
-        pre_hash = self.hash
-        try:
-            post_hash = GIT.get_hash(self.branchname)
-        except ganarchy.git.GitError as e:
-            # This should never happen, but maybe there's some edge cases?
-            # TODO check
-            self.erroring = True
-            self.errormsg = e
-            return None
-        self.hash = post_hash
-        if not pre_hash:
-            pre_hash = post_hash
-        count = GIT.get_count(pre_hash, post_hash)
+            self.hash = post_hash
+            if not pre_hash:
+                pre_hash = post_hash
+            count = work_repo.get_count(pre_hash, post_hash)
         try:
             GIT.check_history(self.branchname, self.project_commit)
             self.refresh_metadata()

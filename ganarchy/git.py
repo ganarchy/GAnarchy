@@ -21,6 +21,7 @@
 # For example, we return 0 for counts instead of raising, but raise
 # instead of returning empty strings for commit hashes and messages.
 
+import shutil
 import subprocess
 
 class GitError(Exception):
@@ -30,17 +31,196 @@ class GitError(Exception):
     pass
 
 class Git:
+    """A git repo.
+
+    Takes a ``pathlib.Path`` as argument.
+    """
+
     def __init__(self, path):
         self.path = path
-        self.base = ("git", "-C", path)
+
+    #########################################
+    # Operations supported on any git repo. #
+    #########################################
+
+    def check_branchname(self, branchname):
+        """Checks if the given branchname is a valid branch name.
+        Raises if it isn't.
+
+        Args:
+            branchname (str): Name of branch.
+
+        Raises:
+            GitError: If an error occurs.
+        """
+        try:
+            if branchname.startswith("-"):
+                raise GitError("check branchname", branchname)
+            out = self._cmd(
+                "check-ref-format", "--branch", branchname
+            ).stdout.decode("utf-8")
+            # protect against @{-1}/@{-n} ("previous checkout operation")
+            # is also fairly future-proofed, I hope?
+            if (not out.startswith(branchname)) or (
+                out.removeprefix(branchname) not in ('\r\n', '\n', '')
+            ):
+                raise GitError("check branchname", out, branchname)
+        except subprocess.CalledProcessError as e:
+            raise GitError("check branchname") from e
+
+    def get_hash(self, target):
+        """Returns the commit hash for a given target.
+
+        Args:
+            target (str): a refspec.
+
+        Raises:
+            GitError: If an error occurs.
+        """
+        try:
+            return self._cmd(
+                "show", target, "-s", "--format=format:%H", "--"
+            ).stdout.decode("utf-8")
+        except subprocess.CalledProcessError as e:
+            raise GitError("get hash") from e
+
+    def get_commit_message(self, target):
+        """Returns the commit message for a given target.
+
+        Args:
+            target (str): a refspec.
+
+        Raises:
+            GitError: If an error occurs.
+        """
+        try:
+            return self._cmd(
+                "show", target, "-s", "--format=format:%B", "--"
+            ).stdout.decode("utf-8", "replace")
+        except subprocess.CalledProcessError as e:
+            raise GitError("get commit message") from e
+
+    ########################
+    # Low-level operations #
+    ########################
+
+    def _cmd_init(self, *args):
+        """Runs a command for initializing this git repo.
+
+        Always uses ``--bare``.
+
+        Returns:
+            subprocess.CompletedProcess: The results of running the command.
+
+        Raises:
+            subprocess.CalledProcessError: If the command exited with a non-zero
+            status.
+        """
+        return self._cmd_common('init', '--bare', *args, self.path)
+
+    def _cmd_clone_from(self, from_, *args):
+        """Runs a command for cloning into this git repo.
+
+        Always uses ``--bare``.
+
+        Returns:
+            subprocess.CompletedProcess: The results of running the command.
+
+        Raises:
+            subprocess.CalledProcessError: If the command exited with a non-zero
+            status.
+        """
+        return self._cmd_common('clone', '--bare', *args, from_, self.path)
+
+    def _cmd(self, *args):
+        """Runs a command for operating on this git repo.
+
+        Note: Doesn't work for git init and git clone operations. Use
+        ``_cmd_init`` and ``_cmd_clone_from`` instead.
+
+        Always uses ``--bare``.
+
+        Returns:
+            subprocess.CompletedProcess: The results of running the command.
+
+        Raises:
+            subprocess.CalledProcessError: If the command exited with a non-zero
+            status.
+        """
+        return self._cmd_common('-C', self.path, '--bare', *args)
+
+    def _cmd_common(self, *args):
+        """Runs a git command with the given args.
+
+        This is a simple wrapper around ``subprocess.run``.
+
+        Returns:
+            subprocess.CompletedProcess: The results of running the command.
+
+        Raises:
+            subprocess.CalledProcessError: If the command exited with a non-zero
+            status.
+        """
+        return subprocess.run(
+            ('git',) + args,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+class GitCache(Git):
+    """A permanent repository used to cache remote objects.
+    """
+
+    #####################
+    # Public operations #
+    #####################
 
     def create(self):
         """Creates the local repo.
 
         Can safely be called on an existing repo.
         """
-        subprocess.call(self.base + ("init", "-q"))
+        try:
+            return self._cmd_init()
+        except subprocess.CalledProcessError as e:
+            raise GitError("create") from e
 
+    def with_work_repos(self, count):
+        """Creates a context manager for managing work repos.
+
+        Args:
+            count (int): The number of work repos.
+        """
+        """From Rust:
+        /// Creates the given number of work repos, and calls the closure to run
+        /// operations on them.
+        ///
+        /// The operations can be done on the individual repos, and they'll be
+        /// merged into the main repo as this function returns.
+        ///
+        /// If the callback fails, the work repos will be deleted. If the function
+        /// succeeds, the work repos will be merged back into the main repo.
+        ///
+        /// # Panics
+        ///
+        /// Panics if a merge conflict is detected. Specifically, if two work repos
+        /// modify the same work branch.
+        ///
+        /// # "Poisoning"
+        ///
+        /// If this method unwinds, the underlying git repos, if any, will not be
+        /// deleted. Instead, future calls to this method will return a GitError.
+        """
+        work_repos = []
+        for i in range(0, count):
+            new_path = self.path.with_name('ganarchy-fetch-{}.git'.format(i))
+            work_repos.append(GitFetch(new_path))
+        physical_work_repos = []
+        for repo in work_repos:
+            self._fork(repo)
+            physical_work_repos.append(repo)
+        return _WithWorkRepos(self, physical_work_repos)
 
     def check_history(self, local_head, commit):
         """Checks if the local head contains commit in its history.
@@ -54,39 +234,50 @@ class Git:
             GitError: If an error occurs.
         """
         try:
-            subprocess.run(
-                self.base + ("merge-base", "--is-ancestor", commit, local_head),
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            self._cmd("merge-base", "--is-ancestor", commit, local_head)
         except subprocess.CalledProcessError as e:
             raise GitError("check history") from e
 
-    def check_branchname(self, branchname):
-        """Checks if the given branchname is a valid branch name.
-        Raises if it isn't.
+    #######################
+    # Internal operations #
+    #######################
 
-        Args:
-            branchname (str): Name of branch.
+    def _fetch_work(self, from_, branch, from_branch):
+        try:
+            self._cmd(
+                "fetch", from_.path, "+{}:{}".format(from_branch, branch)
+            )
+        except subprocess.CalledProcessError as e:
+            raise GitError("fetch work") from e
 
-        Raises:
-            GitError: If an error occurs.
+    def _replace(self, old_name, new_name):
+        try:
+            self._cmd(
+                "branch", "-M", old_name, new_name
+            )
+        except subprocess.CalledProcessError as e:
+            raise GitError("replace") from e
+
+    def _fork(self, into):
+        """Makes a shared clone of this local repo into the given work repo.
+
+        Equivalent to ``git clone --bare --shared``, which is very dangerous!
         """
         try:
-            # TODO check that this rstrip is safe
-            out = subprocess.run(
-                self.base + ("check-ref-format", "--branch", branchname),
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            ).stdout.decode("utf-8").rstrip('\r\n')
-            # protect against @{-1}/@{-n} ("previous checkout operation")
-            # is also fairly future-proofed, I hope?
-            if out != branchname:
-                raise GitError("check branchname", out, branchname)
+            return into._cmd_clone_from(self.path, '--shared')
         except subprocess.CalledProcessError as e:
-            raise GitError("check branchname") from e
+            raise GitError("fork") from e
+
+class GitFetch(Git):
+    """A temporary repository used to fetch remote objects.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pending_branches = set()
+
+    #####################
+    # Public operations #
+    #####################
 
     def force_fetch(self, url, remote_head, local_head):
         """Fetches a remote head into a local head.
@@ -102,14 +293,12 @@ class Git:
             GitError: If an error occurs.
         """
         try:
-            subprocess.run(
-                self.base + ("fetch", "-q", url, "+" + remote_head + ":" + local_head),
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+            self._cmd(
+                "fetch", url, "+" + remote_head + ":" + local_head
             )
+            self.pending_branches.add(local_head)
         except subprocess.CalledProcessError as e:
-            raise GitError(e.output) from e
+            raise GitError("fetch source") from e
 
     def get_count(self, first_hash, last_hash):
         """Returns a count of the commits added since ``first_hash``
@@ -124,50 +313,60 @@ class Git:
             if an error occurs.
         """
         try:
-            res = subprocess.run(
-                self.base + ("rev-list", "--count", first_hash + ".." + last_hash, "--"),
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+            res = self._cmd(
+                "rev-list", "--count", first_hash + ".." + last_hash, "--"
             ).stdout.decode("utf-8").strip()
             return int(res)
         except subprocess.CalledProcessError as e:
             return 0
 
-    def get_hash(self, target):
-        """Returns the commit hash for a given target.
+    #######################
+    # Internal operations #
+    #######################
 
-        Args:
-            target (str): a refspec.
-
-        Raises:
-            GitError: If an error occurs.
-        """
+    def _rm_branch(self, branch):
         try:
-            return subprocess.run(
-                self.base + ("show", target, "-s", "--format=format:%H", "--"),
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            ).stdout.decode("utf-8")
+            self._cmd("branch", "-D", branch)
         except subprocess.CalledProcessError as e:
-            raise GitError("") from e
+            raise GitError("rm branch") from e
 
-    def get_commit_message(self, target):
-        """Returns the commit message for a given target.
-
-        Args:
-            target (str): a refspec.
-
-        Raises:
-            GitError: If an error occurs.
-        """
+    def _delete(self):
         try:
-            return subprocess.run(
-                self.base + ("show", target, "-s", "--format=format:%B", "--"),
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            ).stdout.decode("utf-8", "replace")
-        except subprocess.CalledProcessError as e:
-            raise GitError("") from e
+            shutil.rmtree(self.path)
+        except IOError as e:
+            raise GitError("delete", self.path) from e
+
+class _WithWorkRepos:
+    """Context manager for merging forked repos in ``with_work_repos``.
+    """
+    def __init__(self, cache_repo, work_repos):
+        self.cache_repo = cache_repo
+        self.work_repos = work_repos
+
+    def __enter__(self):
+        return self.work_repos
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            branches = set()
+            for work in self.work_repos:
+                for branch in work.pending_branches:
+                    if branch in branches:
+                        raise GitError("Branch {} is in conflict!".format(branch))
+                    branches.add(branch)
+            del branches
+            del work
+            del branch
+
+            for i, repo in enumerate(self.work_repos):
+                for branch in repo.pending_branches:
+                    fetch_head = "{}-{}".format(branch, i)
+                    # First collect the work branch into a fetch head
+                    self.cache_repo._fetch_work(repo, fetch_head, branch)
+                    # If that succeeds, delete the work branch to free up disk
+                    repo._rm_branch(branch)
+                    # We have all the objects in the main repo and we probably
+                    # have enough disk, so just replace the fetch head into
+                    # the main branch and hope nothing errors.
+                    self.cache_repo._replace(fetch_head, branch)
+                repo._delete()
