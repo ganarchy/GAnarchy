@@ -100,6 +100,22 @@ class Git:
         except subprocess.CalledProcessError as e:
             raise GitError("get commit message") from e
 
+    def check_history(self, local_head, commit):
+        """Checks if the local head contains commit in its history.
+        Raises if it doesn't.
+
+        Args:
+            local_head (str): Name of local head.
+            commit (str): Commit hash.
+
+        Raises:
+            GitError: If an error occurs.
+        """
+        try:
+            self._cmd("merge-base", "--is-ancestor", commit, local_head)
+        except subprocess.CalledProcessError as e:
+            raise GitError("check history") from e
+
     ########################
     # Low-level operations #
     ########################
@@ -221,22 +237,6 @@ class GitCache(Git):
             self._fork(repo)
             physical_work_repos.append(repo)
         return _WithWorkRepos(self, physical_work_repos)
-
-    def check_history(self, local_head, commit):
-        """Checks if the local head contains commit in its history.
-        Raises if it doesn't.
-
-        Args:
-            local_head (str): Name of local head.
-            commit (str): Commit hash.
-
-        Raises:
-            GitError: If an error occurs.
-        """
-        try:
-            self._cmd("merge-base", "--is-ancestor", commit, local_head)
-        except subprocess.CalledProcessError as e:
-            raise GitError("check history") from e
 
     #######################
     # Internal operations #

@@ -19,6 +19,7 @@
 
 import os
 import shutil
+import threading
 
 import click
 
@@ -31,8 +32,9 @@ from ganarchy.templating import environment
 
 @cli.main.command()
 @click.option('--keep-stale-projects/--no-keep-stale-projects', default=True)
+@click.option('--n-threads', default=4)
 @click.argument('out', required=True, type=click.Path(file_okay=False, resolve_path=True))
-def run_once(out, keep_stale_projects):
+def run_once(out, n_threads, keep_stale_projects):
     """Runs GAnarchy once.
 
     Processes any necessary updates and updates the output directory to match.
@@ -66,13 +68,17 @@ def run_once(out, keep_stale_projects):
     # make sure it is a git repo
     core.GIT.create()
 
+    # default number of threads to use
+    #n_threads = 4
+
     if True:
         # reload config and repo data
         effective_repos.update()
         database = db.connect_database(effective_conf)
+        dblock = threading.Lock()
         database.load_repos(effective_repos)
 
-        instance = core.GAnarchy(database, effective_conf)
+        instance = core.GAnarchy(database, dblock, effective_conf)
 
         if not instance.base_url:
             click.echo("No base URL specified", err=True)
@@ -87,11 +93,12 @@ def run_once(out, keep_stale_projects):
         os.makedirs(out + "/project", exist_ok=True)
 
         template_project = env.get_template('project.html')
-        for p in instance.projects:
+        n_threads = min(n_threads, len(instance.projects))
+        def update_project(p, work_repo):
             p.load_repos()
 
             generate_html = []
-            results = p.update()
+            results = p.update(work_repo)
             #if not p.exists:
             #    ...
             for (repo, count) in results:
@@ -105,7 +112,8 @@ def run_once(out, keep_stale_projects):
                     click.echo(repo.errormsg, err=True)
             html_entries = []
             for (url, msg, count, branch) in generate_html:
-                history = database.list_repobranch_activity(p.commit, url, branch)
+                with dblock:
+                    history = database.list_repobranch_activity(p.commit, url, branch)
                 # TODO process history into SVG
                 # TODO move this into a separate system
                 # (e.g. ``if project.startswith("svg-"):``)
@@ -126,6 +134,20 @@ def run_once(out, keep_stale_projects):
                     ganarchy       = instance
                 ).dump(f)
 
+        def run_thread(i, work_repo):
+            for p in instance.projects[i::n_threads]:
+                update_project(p, work_repo)
+
+    with core.GIT.with_work_repos(n_threads) as work_repos:
+        threads = []
+        for i, work_repo in enumerate(work_repos):
+            t = threading.Thread(target=lambda: run_thread(i, work_repo), name="ganarchy-fetch-{}".format(i))
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join()
+
+    if True:
         # render the config
         template = env.get_template('index.toml')
         with open(out + "/index.toml", "w") as f:
@@ -160,6 +182,7 @@ def cron_target(dry_run, project):
     # load config and repo data
     effective_repos.update()
     database = db.connect_database(effective_conf)
+    dblock = threading.Lock()
     database.load_repos(effective_repos)
 
     # load template environment
@@ -183,7 +206,7 @@ def cron_target(dry_run, project):
     # make sure it is a git repo
     core.GIT.create()
 
-    instance = core.GAnarchy(database, effective_conf)
+    instance = core.GAnarchy(database, dblock, effective_conf)
 
     if not instance.base_url or not project:
         click.echo("No base URL or project commit specified", err=True)
@@ -196,11 +219,12 @@ def cron_target(dry_run, project):
         click.echo(template.render(ganarchy=instance), nl=False)
         return
 
-    p = core.Project(database, project)
+    p = core.Project(database, dblock, project)
     p.load_repos()
 
     generate_html = []
-    results = p.update(dry_run=dry_run)
+    with core.GIT.with_work_repos(1) as work_repos:
+        results = p.update(work_repos[0], dry_run=dry_run)
     #if not p.exists:
     #    ...
     for (repo, count) in results:

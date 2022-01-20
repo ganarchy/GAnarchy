@@ -56,7 +56,7 @@ class Repo:
         self.branchname = None
         self.head = None
 
-        if not self._check_branch():
+        if not self._check_branch(GIT):
             return
 
         if not branch:
@@ -74,9 +74,9 @@ class Repo:
             except ganarchy.git.GitError:
                 self.erroring = True
 
-        self.refresh_metadata()
+        self.refresh_metadata(GIT)
 
-    def _check_branch(self):
+    def _check_branch(self, work_repo):
         """Checks if ``self.branch`` is a valid git branch name, or None. Sets
         ``self.errormsg`` and ``self.erroring`` accordingly.
 
@@ -86,20 +86,20 @@ class Repo:
         if not self.branch:
             return True
         try:
-            GIT.check_branchname(self.branch)
+            work_repo.check_branchname(self.branch)
             return True
         except ganarchy.git.GitError as e:
             self.erroring = True
             self.errormsg = e
             return False
 
-    def refresh_metadata(self):
+    def refresh_metadata(self, work_repo):
         """Refreshes repo metadata.
         """
-        if not self._check_branch():
+        if not self._check_branch(work_repo):
             return
         try:
-            self.message = GIT.get_commit_message(self.branchname)
+            self.message = work_repo.get_commit_message(self.branchname)
         except ganarchy.git.GitError as e:
             self.erroring = True
             self.errormsg = e
@@ -109,42 +109,40 @@ class Repo:
     # but this might be handy for dry runs.
     # alternatively: change the return to be the new head commit,
     # and update things accordingly.
-    def update(self, *, dry_run=False):
+    def update(self, work_repo, *, dry_run=False):
         """Updates the git repo, returning a commit count.
 
         Args:
             dry_run (bool): To simulate an update without doing anything.
                 In particular, without fetching commits.
         """
-        if not self._check_branch():
+        if not self._check_branch(work_repo):
             return None
-        with GIT.with_work_repos(1) as work_repos: # FIXME
-            work_repo = work_repos[0]
-            if not dry_run:
-                try:
-                    work_repo.force_fetch(self.url, self.head, self.branchname)
-                except ganarchy.git.GitError as e:
-                    # This may error for various reasons, but some
-                    # are important: dead links, etc
-                    self.erroring = True
-                    self.errormsg = e
-                    return None
-            pre_hash = self.hash
+        if not dry_run:
             try:
-                post_hash = work_repo.get_hash(self.branchname)
+                work_repo.force_fetch(self.url, self.head, self.branchname)
             except ganarchy.git.GitError as e:
-                # This should never happen, but maybe there's some edge cases?
-                # TODO check
+                # This may error for various reasons, but some
+                # are important: dead links, etc
                 self.erroring = True
                 self.errormsg = e
                 return None
-            self.hash = post_hash
-            if not pre_hash:
-                pre_hash = post_hash
-            count = work_repo.get_count(pre_hash, post_hash)
+        pre_hash = self.hash
         try:
-            GIT.check_history(self.branchname, self.project_commit)
-            self.refresh_metadata()
+            post_hash = work_repo.get_hash(self.branchname)
+        except ganarchy.git.GitError as e:
+            # This should never happen, but maybe there's some edge cases?
+            # TODO check
+            self.erroring = True
+            self.errormsg = e
+            return None
+        self.hash = post_hash
+        if not pre_hash:
+            pre_hash = post_hash
+        count = work_repo.get_count(pre_hash, post_hash)
+        try:
+            work_repo.check_history(self.branchname, self.project_commit)
+            self.refresh_metadata(work_repo)
             return count
         except ganarchy.git.GitError as e:
             self.erroring = True
@@ -168,11 +166,12 @@ class Project:
         exists (bool): Whether the project exists in our git cache.
     """
 
-    def __init__(self, dbconn, project_commit):
+    def __init__(self, dbconn, dblock, project_commit):
         self.commit = project_commit
-        self.refresh_metadata()
+        self.refresh_metadata(GIT)
         self.repos = None
         self._dbconn = dbconn
+        self._dblock = dblock
 
     def load_repos(self):
         """Loads the repos into this project.
@@ -180,17 +179,18 @@ class Project:
         If repos have already been loaded, re-loads them.
         """
         repos = []
-        for url, branch, head_commit in self._dbconn.list_repobranches(self.commit):
-            repos.append(
-                Repo(self._dbconn, self.commit, url, branch, head_commit)
-            )
+        with self._dblock:
+            for url, branch, head_commit in self._dbconn.list_repobranches(self.commit):
+                repos.append(
+                    Repo(self._dbconn, self.commit, url, branch, head_commit)
+                )
         self.repos = repos
 
-    def refresh_metadata(self):
+    def refresh_metadata(self, work_repo):
         """Refreshes project metadata.
         """
         try:
-            project = GIT.get_commit_message(self.commit)
+            project = work_repo.get_commit_message(self.commit)
             project_title, project_desc = (lambda x: x.groups() if x is not None else ('', None))(re.fullmatch('^\\[Project\\]\s+(.+?)(?:\n\n(.+))?$', project, flags=re.ASCII|re.DOTALL|re.IGNORECASE))
             if not project_title.strip(): # FIXME
                 project_title, project_desc = ("Error parsing project commit",)*2
@@ -206,15 +206,15 @@ class Project:
             self.title = None
             self.description = None
 
-    def update(self, *, dry_run=False):
+    def update(self, work_repo, *, dry_run=False):
         """Updates the project and its repos.
         """
         # TODO? check if working correctly
         results = []
         if self.repos is not None:
             for repo in self.repos:
-                results.append((repo, repo.update(dry_run=dry_run)))
-        self.refresh_metadata()
+                results.append((repo, repo.update(work_repo, dry_run=dry_run)))
+        self.refresh_metadata(work_repo)
         if self.repos is not None:
             results.sort(key=lambda x: x[1] or -1, reverse=True)
             if not dry_run:
@@ -228,7 +228,8 @@ class Project:
                             repo.hash,
                             count
                         ))
-                self._dbconn.insert_activities(entries)
+                with self._dblock:
+                    self._dbconn.insert_activities(entries)
         return results
 
 class GAnarchy:
@@ -244,11 +245,12 @@ class GAnarchy:
         projects (list, optional): Projects associated with this instance.
     """
 
-    def __init__(self, dbconn, config):
+    def __init__(self, dbconn, dblock, config):
         self.title = None
         self.base_url = None
         self.projects = None
         self._dbconn = dbconn
+        self._dblock = dblock
         self._config = config
         self.load_metadata()
 
@@ -281,7 +283,8 @@ class GAnarchy:
         If projects have already been loaded, re-loads them.
         """
         projects = []
-        for project in self._dbconn.list_projects():
-            projects.append(Project(self._dbconn, project))
+        with self._dblock:
+            for project in self._dbconn.list_projects():
+                projects.append(Project(self._dbconn, self._dblock, project))
         projects.sort(key=lambda p: p.title or "") # sort projects by title
         self.projects = projects
