@@ -45,7 +45,7 @@ class Repo:
     """
     # TODO fill in Attributes.
 
-    def __init__(self, dbconn, project_commit, url, branch, head_commit):
+    def __init__(self, dbconn, project_commit, url, branch, head_commit, pinned):
         self.url = url
         self.branch = branch
         self.project_commit = project_commit
@@ -55,6 +55,7 @@ class Repo:
         self.hash = None
         self.branchname = None
         self.head = None
+        self.pinned = pinned
 
         if not self._check_branch(GIT):
             return
@@ -180,9 +181,9 @@ class Project:
         """
         repos = []
         with self._dblock:
-            for url, branch, head_commit in self._dbconn.list_repobranches(self.commit):
+            for url, branch, head_commit, pinned in self._dbconn.list_repobranches(self.commit):
                 repos.append(
-                    Repo(self._dbconn, self.commit, url, branch, head_commit)
+                    Repo(self._dbconn, self.commit, url, branch, head_commit, pinned)
                 )
         self.repos = repos
 

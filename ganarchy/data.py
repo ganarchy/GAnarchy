@@ -89,7 +89,8 @@ _MATCHER_REPOS = abdl.compile("""->'projects':$dict
                                      ->url[:?$str:?$uri]:?$dict
                                        ->branch:?$dict
                                          (->active'active'?:?$bool)
-                                         (->federate'federate'?:?$bool)?""",
+                                         (->federate'federate'?:?$bool)?
+                                         (->pinned'pinned'?:?$bool)?""",
                               dict(bool=bool, dict=dict, str=str, uri=URIPredicate(), commit=CommitPredicate()))
 _MATCHER_REPO_LIST_SRCS = abdl.compile("""->'repo_list_srcs':$dict
                                             ->src[:?$str:?$uri]:?$dict
@@ -156,6 +157,10 @@ class PCTP(OverridableProperty):
     @property
     def federate(self):
         return self.options.get('federate', True)
+
+    @property
+    def pinned(self):
+        return self.options.get('pinned', False)
 
 class RepoListSource(OverridableProperty):
     """A source for a repo list.
@@ -273,7 +278,7 @@ class ObjectDataSource(DataSource):
     _SUPPORTED_PROPERTIES = {
                                 DataProperty.INSTANCE_TITLE: lambda obj: (d['title'][1] for d in _MATCHER_TITLE.match(obj)),
                                 DataProperty.INSTANCE_BASE_URL: lambda obj: (d['base_url'][1] for d in _MATCHER_BASE_URL.match(obj)),
-                                DataProperty.VCS_REPOS: lambda obj: (PCTP(r['commit'][0], r['url'][0], r['branch'][0], {k: v[1] for k, v in r.items() if k in {'active', 'federate'}}) for r in _MATCHER_REPOS.match(obj)),
+                                DataProperty.VCS_REPOS: lambda obj: (PCTP(r['commit'][0], r['url'][0], r['branch'][0], {k: v[1] for k, v in r.items() if k in {'active', 'federate', 'pinned'}}) for r in _MATCHER_REPOS.match(obj)),
                                 DataProperty.REPO_LIST_SOURCES: lambda obj: (RepoListSource(d['src'][0], d['src'][1]) for d in _MATCHER_REPO_LIST_SRCS.match(obj)),
                             }
 
@@ -511,10 +516,11 @@ class RepoListManager(DataSource):
                 else:
                     for pctp in iterator:
                         # but repo lists aren't allowed to override anything
-                        try:
-                            del pctp.options['federate']
-                        except KeyError:
-                            pass
+                        for filtered in ['federate', 'pinned']:
+                            try:
+                                del pctp.options[filtered]
+                            except KeyError:
+                                pass
                         if pctp.active:
                             yield pctp
 

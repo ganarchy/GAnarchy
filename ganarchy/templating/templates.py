@@ -70,7 +70,7 @@ def get_template_loader():
 
 {%- for project in database.list_projects() %}
 [projects.{{project}}]
-{%- for repo_url, branch, _head_commit in database.list_repobranches(project) %}
+{%- for repo_url, branch, _head_commit, _pinned in database.list_repobranches(project) %}
 {%- if database.should_repo_federate(project, repo_url, branch) %}
 "{{repo_url|tomle}}".{% if not branch %}HEAD{% else %}"{{branch|tomle}}"{% endif %} = { active=true }
 {%- endif %}
@@ -108,8 +108,15 @@ def get_template_loader():
         <h1>{{ project_title|e }}</h1>
         <p>Tracking <span id="project_commit"><a href="web+ganarchy:{{ project_commit }}">{{ project_commit }}</a></span></p>
         <div id="project_body"><p>{{ project_body|e|replace("\n\n", "</p><p>") }}</p></div>
+        <h2>Pinned repos</h2>
         <ul>
-        {% for url, msg, img, branch in repos -%}
+        {% for url, msg, img, branch in pinned_repos -%}
+            <li><a href="{{ url|e }}">{{ url|e }}</a>{% if branch %} <span class="branchname">[{{ branch|e }}]</span>{% endif %}: {{ msg|e }}</li>
+        {% endfor -%}
+        </ul>
+        <h2>Additional repos</h2>
+        <ul>
+        {% for url, msg, img, branch in unpinned_repos -%}
             <li><a href="{{ url|e }}">{{ url|e }}</a>{% if branch %} <span class="branchname">[{{ branch|e }}]</span>{% endif %}: {{ msg|e }}</li>
         {% endfor -%}
         </ul>

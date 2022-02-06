@@ -164,7 +164,8 @@ class Database:
                 "active" INT,
                 "branch" TEXT,
                 "project" TEXT,
-                "federate" INT
+                "federate" INT,
+                "pinned" INT
             )
         ''')
         c.execute('''
@@ -184,8 +185,8 @@ class Database:
         ):
             if repo.active:
                 c.execute(
-                    '''INSERT INTO "repos" VALUES (?, ?, ?, ?, ?)''',
-                    (repo.uri, 1, repo.branch, repo.project_commit, int(repo.federate))
+                    '''INSERT INTO "repos" VALUES (?, ?, ?, ?, ?, ?)''',
+                    (repo.uri, 1, repo.branch, repo.project_commit, int(repo.federate), int(repo.pinned))
                 )
         self.conn.commit()
         c.close()
@@ -259,9 +260,14 @@ class Database:
         """
         c = self.conn.cursor()
         try:
-            for (e, url, branch, head_commit) in c.execute(
+            for (e, url, branch, head_commit, pinned) in c.execute(
                 '''
-                    SELECT "max"("e"), "url", "branch", "head_commit"
+                    SELECT
+                        "max"("e"),
+                        "url",
+                        "branch",
+                        "head_commit",
+                        "pinned"
                     FROM (
                         SELECT
                             "max"("T1"."entry") "e",
@@ -282,13 +288,20 @@ class Database:
                         SELECT null, "T3"."url", "T3"."branch", null
                         FROM "repos" "T3"
                         WHERE "active" AND "project" IS ?1
-                    )
+                    ) JOIN (
+                        SELECT
+                            "T4"."url" "purl",
+                            "T4"."branch" "pbranch",
+                            "T4"."pinned"
+                        FROM "repos" "T4"
+                        WHERE "project" IS ?1
+                    ) ON ("url" IS "purl" AND "branch" IS "pbranch")
                     GROUP BY "url", "branch"
                     ORDER BY "e"
                 ''',
                 (project_commit,)
             ):
-                yield url, branch, head_commit
+                yield url, branch, head_commit, pinned
         finally:
             c.close()
 

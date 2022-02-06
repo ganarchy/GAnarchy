@@ -104,19 +104,25 @@ def run_once(out, n_threads, keep_stale_projects):
             for (repo, count) in results:
                 if count is not None:
                     generate_html.append(
-                        (repo.url, repo.message, count, repo.branch)
+                        (repo.url, repo.message, count, repo.branch, repo.pinned)
                     )
                 else:
                     click.echo(repo.url, err=True)
                     click.echo(repo.branch, err=True)
                     click.echo(repo.errormsg, err=True)
+            pinned_entries = []
+            unpinned_entries = []
             html_entries = []
-            for (url, msg, count, branch) in generate_html:
+            for (url, msg, count, branch, pinned) in generate_html:
                 with dblock:
                     history = database.list_repobranch_activity(p.commit, url, branch)
                 # TODO process history into SVG
                 # TODO move this into a separate system
                 # (e.g. ``if project.startswith("svg-"):``)
+                if pinned:
+                    pinned_entries.append((url, msg, "", branch))
+                else:
+                    unpinned_entries.append((url, msg, "", branch))
                 html_entries.append((url, msg, "", branch))
 
             os.makedirs(out + "/project/" + p.commit, exist_ok=True)
@@ -128,6 +134,8 @@ def run_once(out, n_threads, keep_stale_projects):
                     project_body   = p.commit_body,
                     project_commit = p.commit,
                     repos          = html_entries,
+                    pinned_repos   = pinned_entries,
+                    unpinned_repos = unpinned_entries,
                     base_url       = instance.base_url,
                     # I don't think this thing supports deprecating the above?
                     project        = p,
@@ -229,16 +237,16 @@ def cron_target(dry_run, project):
     #    ...
     for (repo, count) in results:
         if count is not None:
-            generate_html.append((repo.url, repo.message, count, repo.branch))
+            generate_html.append((repo.url, repo.message, count, repo.branch, repo.pinned))
         else:
             click.echo(repo.errormsg, err=True)
     html_entries = []
-    for (url, msg, count, branch) in generate_html:
+    for (url, msg, count, branch, pinned) in generate_html:
         history = database.list_repobranch_activity(project, url, branch)
         # TODO process history into SVG
         # TODO move this into a separate system
         # (e.g. ``if project.startswith("svg-"):``)
-        html_entries.append((url, msg, "", branch))
+        html_entries.append((url, msg, "", branch, pinned))
 
     template = env.get_template('project.html')
     click.echo(
