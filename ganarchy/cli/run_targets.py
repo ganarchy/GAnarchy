@@ -240,13 +240,19 @@ def cron_target(dry_run, project):
             generate_html.append((repo.url, repo.message, count, repo.branch, repo.pinned))
         else:
             click.echo(repo.errormsg, err=True)
+    pinned_entries = []
+    unpinned_entries = []
     html_entries = []
     for (url, msg, count, branch, pinned) in generate_html:
         history = database.list_repobranch_activity(project, url, branch)
         # TODO process history into SVG
         # TODO move this into a separate system
         # (e.g. ``if project.startswith("svg-"):``)
-        html_entries.append((url, msg, "", branch, pinned))
+        if pinned:
+            pinned_entries.append((url, msg, "", branch))
+        else:
+            unpinned_entries.append((url, msg, "", branch))
+        html_entries.append((url, msg, "", branch))
 
     template = env.get_template('project.html')
     click.echo(
