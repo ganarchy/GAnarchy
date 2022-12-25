@@ -109,6 +109,7 @@ _MATCHER_REPO_LIST_SRCS = abdl.compile("""->'repo_list_srcs':$dict
 
 _MATCHER_TITLE = abdl.compile("""->title'title':$str""", dict(str=str))
 _MATCHER_BASE_URL = abdl.compile("""->base_url'base_url':$str:$uri""", dict(str=str, uri=URIPredicate()))
+_MATCHER_FEDITO = abdl.compile("""->fedito'fedi-to':$int""", dict(int=int))
 
 class OverridableProperty(abc.ABC):
     """An overridable property, with options.
@@ -187,6 +188,7 @@ class DataProperty(Enum):
     INSTANCE_BASE_URL = (2, str)
     VCS_REPOS = (3, PCTP)
     REPO_LIST_SOURCES = (4, RepoListSource)
+    INSTANCE_FEDITO = (5, int)
 
     def get_type(self):
         """Returns the expected type for values from this DataProperty.
@@ -278,6 +280,7 @@ class ObjectDataSource(DataSource):
     _SUPPORTED_PROPERTIES = {
                                 DataProperty.INSTANCE_TITLE: lambda obj: (d['title'][1] for d in _MATCHER_TITLE.match(obj)),
                                 DataProperty.INSTANCE_BASE_URL: lambda obj: (d['base_url'][1] for d in _MATCHER_BASE_URL.match(obj)),
+                                DataProperty.INSTANCE_FEDITO: lambda obj: (d['fedito'][1] for d in _MATCHER_FEDITO.match(obj)),
                                 DataProperty.VCS_REPOS: lambda obj: (PCTP(r['commit'][0], r['url'][0], r['branch'][0], {k: v[1] for k, v in r.items() if k in {'active', 'federate', 'pinned'}}) for r in _MATCHER_REPOS.match(obj)),
                                 DataProperty.REPO_LIST_SOURCES: lambda obj: (RepoListSource(d['src'][0], d['src'][1]) for d in _MATCHER_REPO_LIST_SRCS.match(obj)),
                             }

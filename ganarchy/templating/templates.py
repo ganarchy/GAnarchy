@@ -59,7 +59,11 @@ def get_template_loader():
         </ul>
         <p>Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.</p>
         <p>
+            {% if ganarchy.fedito != 0 -%}
+            <a href="https://fedi-to.net/register?h={{ ganarchy.fedito }}&protocol=web%2Bganarchy">Register web+ganarchy: URI handler (via Fedi-To)</a>
+            {% else -%}
             <a href="{{ ganarchy.base_url|e }}" onclick="event.preventDefault(); navigator.registerProtocolHandler('web+ganarchy', this.href + '?url=%s', 'GAnarchy');">Register web+ganarchy: URI handler</a>
+            {% endif -%}
             (Makes navigating between GAnarchy instances easier).
         </p>
     </body>
@@ -106,7 +110,7 @@ def get_template_loader():
     </head>
     <body>
         <h1>{{ project_title|e }}</h1>
-        <p>Tracking <span id="project_commit"><a href="web+ganarchy:{{ project_commit }}">{{ project_commit }}</a></span></p>
+        <p>Tracking <span id="project_commit"><a href="https://fedi-to.net/go?h={{ ganarchy.fedito }}&target=web%2Bganarchy:{{ project_commit }}">{{ project_commit }}</a></span></p>
         <div id="project_body"><p>{{ project_body|e|replace("\n\n", "</p><p>") }}</p></div>
         <h2>Pinned repos</h2>
         <ul>
@@ -123,7 +127,11 @@ def get_template_loader():
         <p>Powered by <a href="https://ganarchy.autistic.space/">GAnarchy</a>. AGPLv3-licensed. <a href="https://cybre.tech/SoniEx2/ganarchy">Source Code</a>.</p>
         <p>
             <a href="{{ base_url|e }}">Main page</a>.
+            {% if ganarchy.fedito != 0 -%}
+            <a href="https://fedi-to.net/register?h={{ ganarchy.fedito }}&protocol=web%2Bganarchy">Register web+ganarchy: URI handler (via Fedi-To)</a>
+            {% else -%}
             <a href="{{ base_url|e }}" onclick="event.preventDefault(); navigator.registerProtocolHandler('web+ganarchy', this.href + '?url=%s', 'GAnarchy');">Register web+ganarchy: URI handler</a>
+            {% endif -%}
             (Makes navigating between GAnarchy instances easier).
         </p>
     </body>

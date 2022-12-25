@@ -275,8 +275,16 @@ class GAnarchy:
         except LookupError:
             title = "GAnarchy on " + parse.urlparse(base_url).hostname
 
+        try:
+            fedito = self._config.get_property_value(
+                ganarchy.data.DataProperty.INSTANCE_FEDITO
+            )
+        except LookupError:
+            fedito = 0
+
         self.title = title
         self.base_url = base_url
+        self.fedito = fedito
 
     def load_projects(self):
         """Loads the projects into this GAnarchy instance.
