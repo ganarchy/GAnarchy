@@ -18,7 +18,9 @@
 	var url = new URL(document.location.href);
 	var target = url.searchParams.get("url");
 	if (target !== null) {
-		var project = target.match(/^web\+ganarchy\:([a-fA-F0-9]+)$/);
+		// accepts both web+ganarchy:fae and
+		// web+ganarchy://example.org/fae
+		var project = target.match(/^web\+ganarchy\:(?:\/\/[^\\/?#]+[\\/])([a-fA-F0-9]+)$/);
 		if (project !== null) {
 			// some browsers don't like it when you set this directly
 			url.search = "";
