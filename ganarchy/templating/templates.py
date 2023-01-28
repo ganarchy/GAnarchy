@@ -89,7 +89,7 @@ def get_template_loader():
         <meta charset="utf-8" />
         <!--
         GAnarchy - project homepage generator
-        Copyright (C) 2019  Soni L.
+        Copyright (C) 2019, 2023  Soni L.
 
         This program is free software: you can redistribute it and/or modify
         it under the terms of the GNU General Public License as published by
@@ -110,7 +110,7 @@ def get_template_loader():
     </head>
     <body>
         <h1>{{ project_title|e }}</h1>
-        <p>Tracking <span id="project_commit"><a href="https://fedi-to.net/go?h={{ ganarchy.fedito }}&target=web%2Bganarchy:{{ project_commit }}">{{ project_commit }}</a></span></p>
+        <p>Tracking <span id="project_commit"><a href="https://fedi-to.net/go?target=web%2Bganarchy://{{ base_url.rpartition("//")[-1].partition("/")[0] }}/{{ project_commit }}">{{ project_commit }}</a></span></p>
         <div id="project_body"><p>{{ project_body|e|replace("\n\n", "</p><p>") }}</p></div>
         <h2>Pinned repos</h2>
         <ul>
