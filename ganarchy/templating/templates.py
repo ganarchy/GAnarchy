@@ -110,7 +110,11 @@ def get_template_loader():
     </head>
     <body>
         <h1>{{ project_title|e }}</h1>
+        {% if ganarchy.fedito != 0 -%}
         <p>Tracking <span id="project_commit"><a href="https://fedi-to.net/go?target=web%2Bganarchy://{{ base_url.rpartition("//")[-1].partition("/")[0] }}/{{ project_commit }}">{{ project_commit }}</a></span></p>
+        {% else -%}
+        <p>Tracking <span id="project_commit"><a href="web+ganarchy://{{ base_url.rpartition("//")[-1].partition("/")[0] }}/{{ project_commit }}">{{ project_commit }}</a></span></p>
+        {% endif -%}
         <div id="project_body"><p>{{ project_body|e|replace("\n\n", "</p><p>") }}</p></div>
         <h2>Pinned repos</h2>
         <ul>
