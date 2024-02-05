@@ -1,5 +1,5 @@
 # This file is part of GAnarchy - decentralized project hub
-# Copyright (C) 2019, 2020  Soni L.
+# Copyright (C) 2019, 2020, 2024  Soni L.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -26,10 +26,8 @@ import itertools
 import os
 import re
 import time
+import tomllib
 
-import abdl
-import abdl.exceptions
-import qtoml
 import requests
 
 from enum import Enum
@@ -38,64 +36,47 @@ from urllib.parse import urlparse
 import ganarchy.dirs
 
 # TODO move elsewhere
-class URIPredicate(abdl.predicates.Predicate):
-    def __init__(self, ports=range(1,65536), schemes=('https',)):
-        self.ports = ports
-        self.schemes = schemes
+class _ValidationError(Exception):
+    # we have no idea how classes work in python anymore, it's been 2 years
+    pass
 
-    def accept(self, obj):
-        try:
-            u = urlparse(obj)
-            if not u:
-                return False
-            # also raises for invalid ports, see https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlparse
-            # "Reading the port attribute will raise a ValueError if an invalid port is specified in the URL. [...]"
-            if u.port is not None and u.port not in self.ports:
-                return False
-            if u.scheme not in self.schemes:
-                return False
-        except ValueError:
+def _check_type(obj, ty):
+    if isinstance(obj, ty):
+        return obj
+    raise _ValidationError # TODO...
+
+def _is_uri(obj, ports=range(1,65536), schemes=('https',)):
+    try:
+        u = urlparse(obj)
+        if not u:
             return False
-        return True
+        # also raises for invalid ports, see
+        # https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlparse
+        # "Reading the port attribute will raise a ValueError if an
+        # invalid port is specified in the URL. [...]"
+        if u.port is not None and u.port not in ports:
+            return False
+        if u.scheme not in schemes:
+            return False
+    except ValueError:
+        return False
+    return True
 
-class CommitPredicate(abdl.predicates.Predicate):
-    def __init__(self, sha256ready=True):
-        if sha256ready:
-            self.re = re.compile(r"^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$")
-        else:
-            self.re = re.compile(r"^[0-9a-fA-F]{40}$")
+def _check_uri(obj, ports=range(1,65536), schemes=('https',)):
+    _check_type(obj, str)
+    if _is_uri(obj, ports, schemes):
+        return obj
+    raise _ValidationError # TODO...
 
-    def accept(self, obj):
-        return self.re.match(obj)
+_commit_pattern = re.compile(r"^[0-9a-fA-F]{40}$")
+_commit_sha256_pattern = re.compile(r"^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$")
 
-# sanitize = skip invalid entries
-# validate = error on invalid entries
-# LEGACY. DO NOT USE.
-# TODO remove
-CONFIG_REPOS_SANITIZE = abdl.compile("""->'projects'?:?$dict
-                                          ->commit[:?$str:?$commit]:?$dict
-                                            ->url[:?$str:?$uri]:?$dict
-                                              ->branch:?$dict(->'active'?:?$bool)""",
-                                     dict(bool=bool, dict=dict, str=str, uri=URIPredicate(), commit=CommitPredicate()))
+def _is_commit(obj, sha256ready=True):
+    if sha256ready:
+        return _commit_sha256_pattern.match(obj)
+    else:
+        return _commit_pattern.match(obj)
 
-CONFIG_TITLE_SANITIZE = abdl.compile("""->title'title'?:?$str""", dict(str=str))
-CONFIG_BASE_URL_SANITIZE = abdl.compile("""->base_url'base_url'?:?$str:?$uri""", dict(str=str, uri=URIPredicate()))
-
-# modern matchers, raise ValidationError if the data doesn't exist.
-# they still skip "bad" entries, just like the old matchers.
-
-_MATCHER_REPOS = abdl.compile("""->'projects':$dict
-                                   ->commit[:?$str:?$commit]:?$dict
-                                     ->url[:?$str:?$uri]:?$dict
-                                       ->branch:?$dict
-                                         (->active'active'?:?$bool)
-                                         (->federate'federate'?:?$bool)?
-                                         (->pinned'pinned'?:?$bool)?""",
-                              dict(bool=bool, dict=dict, str=str, uri=URIPredicate(), commit=CommitPredicate()))
-_MATCHER_REPO_LIST_SRCS = abdl.compile("""->'repo_list_srcs':$dict
-                                            ->src[:?$str:?$uri]:?$dict
-                                              (->'active'?:?$bool)""",
-                                       dict(bool=bool, list=list, dict=dict, str=str, uri=URIPredicate(schemes=('https','file',))))
 # TODO
 #_MATCHER_ALIASES = abdl.compile("""->'project_settings':$dict
 #                                     ->commit/[0-9a-fA-F]{40}|[0-9a-fA-F]{64}/?:?$dict
@@ -106,10 +87,6 @@ _MATCHER_REPO_LIST_SRCS = abdl.compile("""->'repo_list_srcs':$dict
 #                                         ->filter[:?$str]:?$dict
 #                                           (->'active'?:?$bool)""",
 #                                    dict(dict=dict, str=str, bool=bool))
-
-_MATCHER_TITLE = abdl.compile("""->title'title':$str""", dict(str=str))
-_MATCHER_BASE_URL = abdl.compile("""->base_url'base_url':$str:$uri""", dict(str=str, uri=URIPredicate()))
-_MATCHER_FEDITO = abdl.compile("""->fedito'fedi-to':$int""", dict(int=int))
 
 class OverridableProperty(abc.ABC):
     """An overridable property, with options.
@@ -277,13 +254,50 @@ class ObjectDataSource(DataSource):
     Updates to the backing object will be immediately reflected in this
     DataSource.
     """
+    # these must all be generators...
     _SUPPORTED_PROPERTIES = {
-                                DataProperty.INSTANCE_TITLE: lambda obj: (d['title'][1] for d in _MATCHER_TITLE.match(obj)),
-                                DataProperty.INSTANCE_BASE_URL: lambda obj: (d['base_url'][1] for d in _MATCHER_BASE_URL.match(obj)),
-                                DataProperty.INSTANCE_FEDITO: lambda obj: (d['fedito'][1] for d in _MATCHER_FEDITO.match(obj)),
-                                DataProperty.VCS_REPOS: lambda obj: (PCTP(r['commit'][0], r['url'][0], r['branch'][0], {k: v[1] for k, v in r.items() if k in {'active', 'federate', 'pinned'}}) for r in _MATCHER_REPOS.match(obj)),
-                                DataProperty.REPO_LIST_SOURCES: lambda obj: (RepoListSource(d['src'][0], d['src'][1]) for d in _MATCHER_REPO_LIST_SRCS.match(obj)),
-                            }
+        DataProperty.INSTANCE_TITLE:
+            lambda obj: (yield _check_type(obj.get('title'), str)),
+        DataProperty.INSTANCE_BASE_URL:
+            lambda obj: (yield _check_uri(obj.get('base_url'))),
+        DataProperty.INSTANCE_FEDITO:
+            lambda obj: (yield _check_type(obj.get('fedi-to'), int)),
+        DataProperty.VCS_REPOS:
+            lambda obj: (
+                PCTP(commit, uri, branch,
+                     {k: v
+                      for k, v in options.items()
+                      if (k in {'active', 'federate', 'pinned'}
+                          and isinstance(v, bool))
+                     })
+                for lazy_obj in (obj,)
+                for (commit, uris) in _check_type(lazy_obj.get('projects'),
+                                                  dict).items()
+                if isinstance(commit, str)
+                if _is_commit(commit)
+                if isinstance(uris, dict)
+                for (uri, branches) in uris.items()
+                if isinstance(uri, str)
+                if _is_uri(uri)
+                if isinstance(branches, dict)
+                for (branch, options) in branches.items()
+                if isinstance(options, dict)
+                if isinstance(options.get('active'), bool)
+            ),
+        DataProperty.REPO_LIST_SOURCES:
+            lambda obj: (
+                RepoListSource(src, options)
+                for lazy_obj in (obj,)
+                for (src, options) in _check_type(lazy_obj.get('repo_list_srcs'),
+                                                  dict).items()
+                if isinstance(src, str)
+                if _is_uri(src, schemes=('https','file'))
+                if isinstance(options, dict)
+                if isinstance(options.get('active'), bool)
+                # TODO it would probably make sense to add
+                # options.get('type', 'toml') somewhere...
+            ),
+    }
 
     def __init__(self, obj):
         self._obj = obj
@@ -297,13 +311,18 @@ class ObjectDataSource(DataSource):
     def get_property_values(self, prop):
         try:
             factory = self.get_supported_properties()[prop]
-        except KeyError as exc: raise PropertyError from exc
+        except KeyError as exc:
+            raise PropertyError from exc
         iterator = factory(self._obj)
         try:
             first = next(iterator)
-        except StopIteration: return (x for x in ())
-        except abdl.exceptions.ValidationError as exc: raise LookupError from exc
-        except LookupError as exc: raise RuntimeError from exc  # don't accidentally swallow bugs in the iterator
+        except StopIteration:
+            return (x for x in ())
+        except _ValidationError as exc:
+            raise LookupError from exc
+        except LookupError as exc:
+            # don't accidentally swallow bugs in the iterator
+            raise RuntimeError from exc
         return itertools.chain([first], iterator)
 
     @classmethod
@@ -322,10 +341,10 @@ class LocalDataSource(ObjectDataSource):
             updtime = self.last_updated
             self.last_updated = os.stat(self.filename).st_mtime
             if not self.file_exists or updtime != self.last_updated:
-                with open(self.filename, 'r', encoding='utf-8', newline='') as f:
-                    self._obj = qtoml.load(f)
+                with open(self.filename, 'rb') as f:
+                    self._obj = tomllib.load(f)
             self.file_exists = True
-        except (OSError, UnicodeDecodeError, qtoml.decoder.TOMLDecodeError) as e:
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
             self.file_exists = False
             self.last_updated = None
             self._obj = {}
@@ -348,6 +367,8 @@ class RemoteDataSource(ObjectDataSource):
         if self.next_update > time.time():
             return
         # I long for the day when toml has a registered media type
+        # FIXME this should be JSON
+        # (also doesn't it have one nowadays? -- nvm, not a registered one :/)
         response = requests.get(self.uri, headers={'user-agent': 'ganarchy/0.0.0', 'accept': '*/*'})
         self.remote_exists = response.status_code == 200
         seconds = 3600
@@ -364,8 +385,8 @@ class RemoteDataSource(ObjectDataSource):
         if self.remote_exists:
             response.encoding = 'utf-8'
             try:
-                self._obj = qtoml.loads(response.text)
-            except (UnicodeDecodeError, qtoml.decoder.TOMLDecodeError) as e:
+                self._obj = tomllib.loads(response.text)
+            except (UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
                 self._obj = {}
                 return e
         else:

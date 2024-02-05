@@ -15,11 +15,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import click
-import qtoml
 
 import ganarchy
 import ganarchy.cli
 import ganarchy.data
+import ganarchy.dirs
 
 @ganarchy.cli.main.group()
 def debug():
@@ -27,10 +27,10 @@ def debug():
 
 @debug.command()
 def paths():
-    click.echo('Config home: {}'.format(ganarchy.config_home))
-    click.echo('Additional config search path: {}'.format(ganarchy.config_dirs))
-    click.echo('Cache home: {}'.format(ganarchy.cache_home))
-    click.echo('Data home: {}'.format(ganarchy.data_home))
+    click.echo('Config home: {}'.format(ganarchy.dirs.CONFIG_HOME))
+    click.echo('Additional config search path: {}'.format(ganarchy.dirs.CONFIG_DIRS))
+    click.echo('Cache home: {}'.format(ganarchy.dirs.CACHE_HOME))
+    click.echo('Data home: {}'.format(ganarchy.dirs.DATA_HOME))
 
 def print_data_source(data_source):
     if ganarchy.data.DataProperty.INSTANCE_TITLE in data_source.get_supported_properties():
